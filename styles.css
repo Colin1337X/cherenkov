@@ -208,6 +208,41 @@ textarea::placeholder {
   white-space: nowrap;
 }
 
+.editor-indicators {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.token-speed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #75cfff;
+  font-family: "VT323", "Courier New", monospace;
+  font-size: 1rem;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.token-speed[hidden] {
+  display: none;
+}
+
+.token-speed::before {
+  width: 5px;
+  height: 5px;
+  content: "";
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.55;
+}
+
+.token-speed[data-state="streaming"] {
+  color: #8de8ff;
+  text-shadow: 0 0 10px rgba(74, 201, 255, 0.7);
+}
+
 .status-pill[data-state="unsaved"] {
   border-color: rgba(255, 178, 76, 0.5);
   color: #ffc879;
@@ -216,6 +251,10 @@ textarea::placeholder {
 
 .status-pill[data-state="saved"] {
   color: #8addff;
+}
+
+.status-pill[data-state="streaming"] {
+  color: #8de8ff;
 }
 
 #terminal-state[data-state="working"] {

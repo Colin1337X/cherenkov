@@ -4,6 +4,8 @@ Cherenkov is a framework-free, browser-based story generator controlled through 
 
 The workspace responds from wide desktop layouts down to narrow phone screens. The editor remains the primary surface, creative controls feed directly into scene prompts, and the combined terminal uses the bundled `VT323-Regular.ttf` font with a monospace fallback.
 
+Generation streams OpenAI-compatible chat-completion deltas into the active editor. A compact token-rate indicator shows a live estimate during streaming and the provider-reported completion rate when usage metadata arrives.
+
 Creative controls inherit through `global defaults → folder → book → chapter → scene`. A record stores only the values edited at that level; reset removes its local overrides. Length, chaos, pacing, and tension range from `0.50x` to `1.50x`, with `1.00x` at the center. They multiply the base `max_tokens`, `temperature`, `top_p`, and `presence_penalty` values configured in generation settings. Dialogue share and prose notes remain prompt guidance.
 
 Serve the directory over localhost so the browser can use Origin Private File System (OPFS):
@@ -84,7 +86,9 @@ flowchart LR
         ABASE[Base generation settings] --> AMULT[Apply inherited multipliers]
         ARECORDS --> AMULT
         AMULT --> AAPI
-        AAPI --> ARECORDS
+        AAPI --> ASTREAM[Stream text and token rate]
+        ASTREAM --> AEDITOR[Live editor and speed indicator]
+        ASTREAM --> ARECORDS
         ACMD --> ANEO[Colored neofetch renderer]
         ARECORDS --> ANEO
         ABROWSER[Storage quota and viewport] --> ANEO

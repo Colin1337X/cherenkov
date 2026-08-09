@@ -49,6 +49,7 @@ const currentPathElement = document.getElementById("current-path");
 const editorStatusElement = document.getElementById("editor-status");
 const editorTitleElement = document.getElementById("editor-title");
 const saveStatusElement = document.getElementById("save-status");
+const tokenSpeedElement = document.getElementById("token-speed");
 const terminalStateElement = document.getElementById("terminal-state");
 const terminalShell = document.querySelector(".terminal-shell");
 const resetCreativeControlsButton = document.getElementById("reset-creative-controls");
@@ -168,8 +169,21 @@ async function executeCommand({ cmd, flags, args }) {
       printTerminal(`Generating ${index + 1}/${scenes.length}: ${record.path}`);
       const controls = resolveCreativeControls(record);
       const params = getGenerationParams(controls);
-      const generation = await openaiGen(resolveSceneContext(record, controls), params);
+      let streamedIntoEditor = false;
+      setTokenSpeed(0, true);
+      const generation = await openaiGen(resolveSceneContext(record, controls), params, update => {
+        setTokenSpeed(update.tokensPerSecond, true);
+        if (currentRecord?.id === record.id) {
+          streamedIntoEditor = true;
+          mainEditor.value = update.content;
+          mainEditor.scrollTop = mainEditor.scrollHeight;
+          setSaveStatus('streaming');
+          renderUiState();
+        }
+      });
       if (generation === null) {
+        setTokenSpeed(null);
+        if (streamedIntoEditor) setSaveStatus('unsaved');
         printTerminal(`Generation failed: ${record.path}`, 'error');
         return;
       }
@@ -181,6 +195,7 @@ async function executeCommand({ cmd, flags, args }) {
         mainEditor.value = generation.content;
         setSaveStatus('saved');
       }
+      setTokenSpeed(generation.metrics.tokensPerSecond);
     }
     await refreshRecords();
     printTerminal(`Generated ${scenes.length} scene${scenes.length === 1 ? '' : 's'}.`);
@@ -210,6 +225,7 @@ async function executeCommand({ cmd, flags, args }) {
       mainEditor.value = '';
       creativeOverrideIds.clear();
       showCreativeControls(globalCreativeControls);
+      setTokenSpeed(null);
       setSaveStatus('ready');
       printTerminal('Loaded global creative defaults.');
       return;
@@ -224,6 +240,7 @@ async function executeCommand({ cmd, flags, args }) {
     mainEditor.value = record.content || '';
     creativeOverrideIds = new Set(Object.keys(record.creativeControls || {}));
     showCreativeControls(resolveCreativeControls(record), creativeOverrideIds);
+    setTokenSpeed(record.lastGeneration?.tokensPerSecond);
     setSaveStatus('saved');
     printTerminal(`Loaded ${record.path}.`);
     return;
@@ -261,6 +278,7 @@ async function executeCommand({ cmd, flags, args }) {
       mainEditor.value = '';
       creativeOverrideIds.clear();
       showCreativeControls(globalCreativeControls);
+      setTokenSpeed(null);
       setSaveStatus('ready');
     }
     await refreshRecords();
@@ -554,6 +572,17 @@ function setSaveStatus(status) {
   saveStatusElement.dataset.state = status;
 }
 
+function setTokenSpeed(rate, streaming = false) {
+  if (!Number.isFinite(rate)) {
+    tokenSpeedElement.hidden = true;
+    tokenSpeedElement.removeAttribute('data-state');
+    return;
+  }
+  tokenSpeedElement.hidden = false;
+  tokenSpeedElement.textContent = `${rate.toFixed(1)} tok/s`;
+  tokenSpeedElement.dataset.state = streaming ? 'streaming' : 'complete';
+}
+
 function setTerminalState(status) {
   terminalStateElement.textContent = status;
   terminalStateElement.dataset.state = status;
@@ -800,14 +829,15 @@ async function createRecord(path, requestedType) {
     mainEditor.value = '';
     creativeOverrideIds.clear();
     showCreativeControls(resolveCreativeControls(record), creativeOverrideIds);
+    setTokenSpeed(null);
     setSaveStatus('saved');
   }
   printTerminal(`Created ${type}: ${path}`);
 }
 
-// Send one OpenAI-compatible chat-completions request for one scene. The
-// system prompt and inherited story context are separate message roles.
-async function openaiGen(context, params) {
+// Stream one OpenAI-compatible chat completion. Providers that ignore stream
+// mode and return ordinary JSON still use the same callback and metrics path.
+async function openaiGen(context, params, onUpdate) {
   try {
     const startedAt = performance.now();
     const endpoint = endpointInput.value.replace(/\/$/, '');
@@ -817,32 +847,87 @@ async function openaiGen(context, params) {
       body: JSON.stringify({
         model: modelInput.value,
         ...params,
+        stream: true,
+        stream_options: { include_usage: true },
         messages: [
           { role: 'system', content: systemPromptInput.value },
           { role: 'user', content: context }
         ]
       })
     });
-    const output = await response.json();
-    if (!response.ok || output?.error) throw new Error(output?.error?.message || `HTTP ${response.status}`);
-    const content = output?.choices?.[0]?.message?.content;
+    if (!response.ok) {
+      const error = await response.json().catch(() => null);
+      throw new Error(error?.error?.message || `HTTP ${response.status}`);
+    }
+
+    let content;
+    let usage;
+    if (response.body && response.headers.get('content-type')?.includes('text/event-stream')) {
+      ({ content, usage } = await readCompletionStream(response, startedAt, onUpdate));
+    } else {
+      const output = await response.json();
+      if (output?.error) throw new Error(output.error.message || 'Generation failed.');
+      content = output?.choices?.[0]?.message?.content;
+      usage = output?.usage;
+      if (typeof content === 'string') onUpdate?.({ content, ...measureCompletion(content, usage, startedAt) });
+    }
     if (typeof content !== 'string' || !content.trim()) throw new Error('API response missing content.');
-    const elapsedSeconds = (performance.now() - startedAt) / 1000;
-    const completionTokens = Number(output.usage?.completion_tokens) || Math.max(1, Math.round(content.length / 4));
     return {
       content,
       metrics: {
         endpoint,
         model: modelInput.value,
-        completionTokens,
-        elapsedSeconds: Number(elapsedSeconds.toFixed(3)),
-        tokensPerSecond: Number((completionTokens / elapsedSeconds).toFixed(2))
+        ...measureCompletion(content, usage, startedAt)
       }
     };
   } catch (error) {
     console.error('Generation failed:', error);
     return null;
   }
+}
+
+// SSE lines can be split across network chunks, so incomplete text stays in
+// the buffer until a newline arrives. Usage commonly appears in a final event.
+async function readCompletionStream(response, startedAt, onUpdate) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let content = '';
+  let usage;
+  const readLine = line => {
+    if (!line.startsWith('data:')) return;
+    const data = line.slice(5).trim();
+    if (!data || data === '[DONE]') return;
+    const event = JSON.parse(data);
+    if (event.error) throw new Error(event.error.message || 'Generation failed.');
+    if (event.usage) usage = event.usage;
+    const delta = event.choices?.[0]?.delta?.content ?? event.choices?.[0]?.text;
+    if (typeof delta === 'string' && delta) content += delta;
+    if (content && (delta || event.usage)) {
+      onUpdate?.({ content, ...measureCompletion(content, usage, startedAt) });
+    }
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+    for (const line of lines) readLine(line.trimEnd());
+    if (done) break;
+  }
+  if (buffer.trim()) readLine(buffer.trimEnd());
+  return { content, usage };
+}
+
+function measureCompletion(content, usage, startedAt) {
+  const elapsedSeconds = Math.max(0.001, (performance.now() - startedAt) / 1000);
+  const completionTokens = Number(usage?.completion_tokens) || Math.max(1, Math.round(content.length / 4));
+  return {
+    completionTokens,
+    elapsedSeconds: Number(elapsedSeconds.toFixed(3)),
+    tokensPerSecond: Number((completionTokens / elapsedSeconds).toFixed(2))
+  };
 }
 
 function apiHeaders() {
