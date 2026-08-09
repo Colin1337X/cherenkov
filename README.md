@@ -13,22 +13,34 @@ Then open `http://localhost:8000`.
 ## Commands
 
 ```text
-mkdir /folder
-mkdir /folder/book
-mkdir /folder/book/chapter
+mkdir -p /folder/book/chapter
 touch /folder/book/chapter/scene
 load /folder/book/chapter/scene
 save
 ls /
+ls -r /
 pwd
 cd /folder/book
 mv /folder/book/chapter/scene /folder/book/chapter/new-name
 rm /folder/book/chapter/new-name
+rm -rf /folder/book
 generate /folder/book
 generate --missing /folder/book
+generate --dry-run --stale /folder/book
 clear
 help
 ```
+
+Short flags can be combined, so `rm -rf /folder/book` is the same as
+`rm --recursive --force /folder/book`.
+
+| Command | Flags |
+| --- | --- |
+| `ls` | `-r`, `--recursive` lists all descendants instead of immediate children. |
+| `mkdir` | `-p`, `--parents` creates missing folder, book, and chapter records. |
+| `mv` | `-f`, `--force` replaces an existing destination of the same type. |
+| `rm` | `-r`, `--recursive` removes containers; `-f`, `--force` suppresses missing-path errors. |
+| `generate` | `-m`, `--missing`; `-s`, `--stale`; `-f`, `--force`; `-n`, `--dry-run`. |
 
 Paths use the fixed hierarchy `/folder/book/chapter/scene`. OPFS stores each record as `/records/<immutable-id>.json`; moving a story node changes its virtual `path` and its descendants, not its storage filename.
 

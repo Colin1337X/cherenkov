@@ -40,10 +40,17 @@ async function tokenizecommand(command) {
     return null;
   }
   const parts = command.match(/"[^"]*"|'[^']*'|\S+/g)?.map(part => part.replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, '$1$2')) || [];
+  const flags = [];
+  const args = [];
+  for (const part of parts.slice(1)) {
+    if (part.startsWith('--')) flags.push(part);
+    else if (/^-[^-]+$/.test(part)) flags.push(...part.slice(1).split('').map(flag => '-' + flag));
+    else args.push(part);
+  }
   return executecommand({
-    cmd: parts.shift().toLowerCase(),
-    flags: parts.filter(part => part.startsWith('--')),
-    args: parts.filter(part => !part.startsWith('--'))
+    cmd: parts[0].toLowerCase(),
+    flags,
+    args
   });
 }
 
@@ -54,15 +61,24 @@ async function executecommand({ cmd, flags, args }) {
 
   // A destination can be one scene or any container above it. Generation is
   // deliberately sequential so each completed scene is saved before the next
-  // request begins. --missing simply removes scenes that already have prose.
+  // request begins. Filters can select missing or stale scenes, --dry-run only
+  // prints the queue, and --force deliberately ignores the filters.
   if (cmd === 'generate' || cmd === 'gen' || cmd === 'g') {
     const destination = resolvePath(inputdir || currentPath);
     let scenes = getScenesUnder(destination);
-    if (flags.includes('--missing')) {
+    if (hasFlag(flags, '--force', '-f')) {
+      // Force deliberately keeps the full queue, even when filter flags exist.
+    } else if (hasFlag(flags, '--missing', '-m')) {
       scenes = scenes.filter(record => !record.content?.trim());
+    } else if (hasFlag(flags, '--stale', '-s')) {
+      scenes = scenes.filter(record => record.stale === true);
     }
     if (!scenes.length) {
       printTerminal('No scenes to generate.');
+      return;
+    }
+    if (hasFlag(flags, '--dry-run', '-n')) {
+      printTerminal(`Would generate ${scenes.length} scene${scenes.length === 1 ? '' : 's'}:\n${scenes.map(record => record.path).join('\n')}`);
       return;
     }
     for (const [index, record] of scenes.entries()) {
@@ -111,7 +127,11 @@ async function executecommand({ cmd, flags, args }) {
   if (cmd === 'delete' || cmd === 'del' || cmd === 'rm' || cmd === 'd') {
     const record = findRecord(inputdir || currentPath);
     if (!record) {
-      printTerminal(`Record not found: ${inputdir || currentPath}`);
+      if (!hasFlag(flags, '--force', '-f')) printTerminal(`Record not found: ${inputdir || currentPath}`);
+      return;
+    }
+    if (record.type !== 'scene' && !hasFlag(flags, '--recursive', '-r')) {
+      printTerminal(`Use --recursive or -r to delete ${record.path} and its contents.`);
       return;
     }
     // Removing a container also removes every record below its virtual path.
@@ -131,7 +151,9 @@ async function executecommand({ cmd, flags, args }) {
 
   if (cmd === 'list' || cmd === 'ls') {
     const scope = resolvePath(inputdir || currentPath);
-    const records = recordArray.filter(record => scope === '/' || record.path === scope || isPathInside(record.path, scope));
+    const records = hasFlag(flags, '--recursive', '-r')
+      ? recordArray.filter(record => scope === '/' || record.path === scope || isPathInside(record.path, scope))
+      : recordArray.filter(record => record.parentPath === scope || (record.path === scope && record.type === 'scene'));
     printTerminal(records.length ? records.map(formatRecord).join('\n') : 'No records.');
     return;
   }
@@ -142,7 +164,17 @@ async function executecommand({ cmd, flags, args }) {
   }
 
   if (cmd === 'help' || cmd === 'h') {
-    printTerminal('Commands: pwd, cd <path>, ls [path], touch <scene>, mkdir <path>, load <path|id>, save, mv <source> <destination>, rm <path|id>, generate [--missing] [path], clear, help');
+    printTerminal(
+      'Commands:\n' +
+      'ls [-r|--recursive] [path]\n' +
+      'mkdir [-p|--parents] <path>\n' +
+      'touch <scene>\n' +
+      'load <path|id> | save | pwd | cd <path>\n' +
+      'mv [-f|--force] <source> <destination>\n' +
+      'rm [-r|--recursive] [-f|--force] <path|id> (combined: -rf)\n' +
+      'generate [-m|--missing] [-s|--stale] [-f|--force] [-n|--dry-run] [path]\n' +
+      'clear | help'
+    );
     return;
   }
 
@@ -151,7 +183,7 @@ async function executecommand({ cmd, flags, args }) {
       printTerminal('Usage: mv <source> <destination>');
       return;
     }
-    const moved = await moveRecord(resolvePath(inputdir), resolvePath(outputdir));
+    const moved = await moveRecord(resolvePath(inputdir), resolvePath(outputdir), hasFlag(flags, '--force', '-f'));
     if (moved) printTerminal(`Moved ${inputdir} to ${outputdir}.`);
     return;
   }
@@ -164,7 +196,17 @@ async function executecommand({ cmd, flags, args }) {
 
   if (cmd === 'mkdir') {
     if (!inputdir) return printTerminal('Usage: mkdir <path>');
-    await createRecord(resolvePath(inputdir));
+    const path = resolvePath(inputdir);
+    if (!inferType(path) || inferType(path) === 'scene') return printTerminal('mkdir can create folders, books, and chapters. Use touch for scenes.');
+    if (hasFlag(flags, '--parents', '-p')) {
+      const parts = path.split('/').filter(Boolean);
+      for (let index = 1; index <= parts.length; index++) {
+        const parent = '/' + parts.slice(0, index).join('/');
+        if (!findRecord(parent)) await createRecord(parent);
+      }
+    } else {
+      await createRecord(path);
+    }
     return;
   }
 
@@ -187,6 +229,12 @@ async function executecommand({ cmd, flags, args }) {
 function printTerminal(message) {
   terminalOutput.value += message + '\n';
   terminalOutput.scrollTop = terminalOutput.scrollHeight;
+}
+
+// Long and short flag names are accepted by the same command branches.
+// tokenizecommand() expands a combined flag such as -rf into -r and -f.
+function hasFlag(flags, ...names) {
+  return names.some(name => flags.includes(name));
 }
 
 // Story paths are virtual. OPFS does not contain this folder structure; it
@@ -486,8 +534,8 @@ async function loadRecord(recordsDirectory, id) {
   }
 }
 
-async function moveRecord(sourcePath, newPath) {
-  const record = findRecord(sourcePath);
+async function moveRecord(sourcePath, newPath, force) {
+  let record = findRecord(sourcePath);
   if (!record) {
     printTerminal(`Record not found: ${sourcePath}`);
     return false;
@@ -496,7 +544,8 @@ async function moveRecord(sourcePath, newPath) {
     printTerminal('A record cannot be moved into itself.');
     return false;
   }
-  if (findRecord(newPath) || inferType(newPath) !== record.type) {
+  const destination = findRecord(newPath);
+  if ((destination && !force) || inferType(newPath) !== record.type) {
     printTerminal(`Invalid destination: ${newPath}`);
     return false;
   }
@@ -504,6 +553,14 @@ async function moveRecord(sourcePath, newPath) {
   if (parentPath !== '/' && !findRecord(parentPath)) {
     printTerminal(`Parent path not found: ${parentPath}`);
     return false;
+  }
+  if (destination) {
+    const replaced = destination.type === 'scene'
+      ? [destination]
+      : recordArray.filter(item => item.path === newPath || isPathInside(item.path, newPath));
+    for (const item of replaced) await deleteRecord(recordDirectory, item.id);
+    await refreshRecords();
+    record = findRecord(sourcePath);
   }
   // Containers and all descendants receive the same path-prefix replacement.
   for (const item of recordArray.filter(item => item.path === sourcePath || isPathInside(item.path, sourcePath))) {
