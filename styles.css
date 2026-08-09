@@ -441,10 +441,13 @@ textarea::placeholder {
 
 .terminal-output {
   width: 100%;
-  height: clamp(110px, 16dvh, 190px);
+  height: clamp(320px, 48dvh, 680px);
+  min-height: 220px;
+  max-height: 80dvh;
   display: block;
   padding: 12px 16px 4px;
   overflow: auto;
+  resize: vertical;
   color: var(--terminal-color);
   background: transparent;
   font-family: inherit;
@@ -486,11 +489,9 @@ textarea::placeholder {
 
 .neofetch-ascii {
   margin: 0;
-  color: var(--terminal-color);
-  font: inherit;
-  font-size: clamp(0.9rem, 1.25vw, 1.1rem);
-  line-height: 1;
-  white-space: pre;
+  width: 768px;
+  height: 660px;
+  display: block;
 }
 
 .neofetch-info {

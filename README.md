@@ -52,7 +52,7 @@ Short flags can be combined, so `rm -rf /folder/book` is the same as
 | `neofetch` | `-a`, `--ascii` accepts `boykisser`, `cherenkov`, or `snep`. The flag is optional. |
 | `color` | Sets all regular terminal input and output to `cyan`, `blue`, `green`, `yellow`, `red`, `pink`, or `white`; `reset` restores cyan. |
 
-`neofetch` renders each source photo as 64-by-30 ASCII with colors sampled from the original pixels. It also shows the current endpoint and model, viewport, browser storage usage and quota, story-record counts, the active path and generation parameters. Its median token rate uses generation samples recorded for the currently selected endpoint and model, so switching either one starts with no matching samples.
+`neofetch` renders each source photo as 128-by-60 ASCII using the original sampled RGB colors. The larger terminal is vertically resizable and also shows the current endpoint and model, viewport, browser storage usage and quota, story-record counts, the active path and generation parameters. Its median token rate uses generation samples recorded for the currently selected endpoint and model, so switching either one starts with no matching samples.
 
 Paths use the fixed hierarchy `/folder/book/chapter/scene`. OPFS stores each record as `/records/<immutable-id>.json`; moving a story node changes its virtual `path` and its descendants, not its storage filename.
 
