@@ -418,6 +418,7 @@ textarea::placeholder {
 }
 
 .terminal-shell {
+  --terminal-color: #71d0ff;
   overflow: hidden;
   border-color: rgba(1, 135, 224, 0.58);
   font-family: "VT323", "Courier New", monospace;
@@ -443,14 +444,107 @@ textarea::placeholder {
   height: clamp(110px, 16dvh, 190px);
   display: block;
   padding: 12px 16px 4px;
-  resize: none;
-  border: 0;
-  outline: 0;
-  color: #71d0ff;
+  overflow: auto;
+  color: var(--terminal-color);
   background: transparent;
   font-family: inherit;
   font-size: clamp(1.15rem, 1.8vw, 1.45rem);
   line-height: 1.18;
+  white-space: pre-wrap;
+}
+
+.terminal-entry {
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  white-space: pre-wrap;
+}
+
+.terminal-entry.error {
+  color: inherit;
+  text-shadow: 0 0 8px currentColor;
+}
+
+.terminal-entry.success {
+  color: inherit;
+  font-weight: 700;
+}
+
+.terminal-entry.muted {
+  color: inherit;
+  opacity: 0.68;
+}
+
+.neofetch-output {
+  min-width: max-content;
+  display: grid;
+  grid-template-columns: auto minmax(260px, 1fr);
+  gap: 28px;
+  align-items: start;
+  padding: 6px 2px 12px;
+}
+
+.neofetch-ascii {
+  margin: 0;
+  color: var(--terminal-color);
+  font: inherit;
+  line-height: 1;
+  white-space: pre;
+}
+
+/* Gradient text gives each image its own palette. The @supports wrapper
+   leaves a readable solid-color fallback in older browsers. */
+@supports ((background-clip: text) or (-webkit-background-clip: text)) {
+  .neofetch-ascii {
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  }
+}
+
+.neofetch-ascii.boykisser {
+  background-image: linear-gradient(145deg, #ffffff 20%, #d9eaff 62%, #ff6179 100%);
+}
+
+.neofetch-ascii.cherenkov {
+  background-image: linear-gradient(145deg, #9af2ff, #078de8 55%, #2448d8);
+}
+
+.neofetch-ascii.snep {
+  background-image: linear-gradient(145deg, #fff4d4, #c8b48d 55%, #8794a6);
+}
+
+.neofetch-info {
+  display: grid;
+  gap: 2px;
+  font: inherit;
+  line-height: 1.1;
+}
+
+.neofetch-title {
+  margin-bottom: 3px;
+  color: var(--terminal-color);
+  font-weight: 700;
+}
+
+.neofetch-row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 8px;
+}
+
+.neofetch-label {
+  color: var(--terminal-color);
+  font-weight: 700;
+}
+
+.neofetch-value {
+  max-width: 48ch;
+  overflow: hidden;
+  color: var(--terminal-color);
+  opacity: 0.82;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .terminal-input-row {
@@ -460,7 +554,7 @@ textarea::placeholder {
   align-items: center;
   gap: 9px;
   padding: 2px 16px 8px;
-  color: #c8efff;
+  color: var(--terminal-color);
   font-size: 1.45rem;
 }
 
@@ -468,7 +562,7 @@ textarea::placeholder {
   width: 100%;
   border: 0;
   outline: 0;
-  color: #d8f4ff;
+  color: var(--terminal-color);
   background: transparent;
   font-family: inherit;
   font-size: clamp(1.15rem, 1.8vw, 1.45rem);
@@ -571,6 +665,10 @@ textarea::-webkit-scrollbar-thumb,
 
   .button {
     width: 100%;
+  }
+
+  .neofetch-output {
+    grid-template-columns: 1fr;
   }
 }
 

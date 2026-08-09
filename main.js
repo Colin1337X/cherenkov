@@ -8,6 +8,7 @@ async function init() {
     globalCreativeControls = getDefaultCreativeControls();
     setupCreativeControls();
     loadConfig();
+    setTerminalColor(localStorage.getItem('terminalColor') || 'cyan', false);
     showCreativeControls(globalCreativeControls);
     await getModels();
     opfsRoot = await navigator.storage.getDirectory();
@@ -31,7 +32,7 @@ async function init() {
           await tokenizeCommand(command);
         } catch (error) {
           console.error('Command failed:', error);
-          printTerminal(`Error: ${error.message}`);
+          printTerminal(`Error: ${error.message}`, 'error');
         } finally {
           commandInput.disabled = false;
           setTerminalState('ready');
@@ -49,6 +50,7 @@ const editorStatusElement = document.getElementById("editor-status");
 const editorTitleElement = document.getElementById("editor-title");
 const saveStatusElement = document.getElementById("save-status");
 const terminalStateElement = document.getElementById("terminal-state");
+const terminalShell = document.querySelector(".terminal-shell");
 const resetCreativeControlsButton = document.getElementById("reset-creative-controls");
 const endpointInput = document.getElementById("openai-endpoint");
 const apiKeyInput = document.getElementById("openai-api-key");
@@ -68,6 +70,73 @@ const creativeControlIds = [
   'world-rules-constraints',
   'character-ledger-and-arcs'
 ];
+// The source images are converted once and embedded as compact text. This
+// keeps neofetch local without adding three image assets to the runtime.
+const neofetchAscii = {
+  boykisser: `    ---.                        .--=
+   =.  :-.                    :-:   =
+  =      :-.  :-::::        :-.     .-
+ ::        :-  =    .::.  :-.        =
+ =           ---+:     .-+.          =
+ =         .--:   .      ..          =
+ =         .::::::.                  =
+ .-                                 -:
+  -.   ::::---:.      =***-:-=.    ::
+   -:  -:  %@@@:      @@@@-  +   .=-.
+*:::=: +   #@@@:      %@@@.  -.  :.:+
+ -:.   =.  :@@+ .:.   .++:   :   .-:
+   +..--:                  :=:.  :-
+  -:          .::::::::            =.
+ .-::::::.               .:::::::::.
+         .*-:::.         :=
+           :=.            .=
+           =:.             :-`,
+  cherenkov: `###%@@@@@%@@@@@@@@@@%@@%@%%@@@@@%%####
+#***%%%@%@@@@@@@@@@@@@@@@@@@@@%%%%####
+**+*#%%%%#%%%##@%%@@@@@@@%%%%%%%%%####
++++**#%%%%%%@@%%%%%@%@%%%%%%%%%%#****#
+++++**##%%%%%%%%%%%%%%#%###%%###*+++**
++++++*###%%%%%#########%#######**+=+**
++***#################*#########+==+***
+##*****###*#*+***##*++*****###*==+****
++****++*###**-+=++++==++**###*++++++++
+***+++=-+++++==::=+=.:-==+**++==+===++
+***+++--======:.==+== .:==++---=++++++
+****+=-:----:.::=++==:  ==++=:-=+++++*
+*****+++=--------==--. :==++=:.-++++++
+#*+****++++++++--=-==:..:---::-++++**+
+#*********+++++-=-=++++=----=-+++*****
+##*****++++++++++=+++++++++++++******#
+%##***++=========++++************+**##
+%##**++*+++++==++++++++*####******##%%`,
+  snep: `---===-==-------=----:---=-.: .   ....
+=-=.:-=====*====-........ ..:.-. . .
+-==-*%#+=#+=**+*****-:.:-=:===--++-
+=-==*+*=++==*++**+*%%%####========:.
+*=-#***#%-:===+**=#*#%##***=-:=-==.. .
+::+++*=.:=:-==*##+##*#+*+##=*. . .. ..
+.-%+*--=::-=:=++#+=**+@*%+%=++ . ..
+:=%+---:::::--=+#=---+@%%++=%+%--::. .
+:=#+==::::.:::+*=-=-=+%**++**@+-.-+-::
+-=#*-+++-:--==+==++@+@%+@+=-#%*+-===:.
+ --#@:*+=:::##=%-@@@@++@@==*++++=--:..
+-.--*=+++::-%=*=-==+*+*++-+**+-%=..  :
+ :+===.:--+:.==++=+*=#*+---+*===+...
+: .+==  :   -++++-===+%=--:-#+-=%=  :=
+-:.:=    - .     ...:::--:--:+*=++..:-
+::==-.   .      .  .......::::+=+@#:.:
+:-+===.:--.      .  .. ::...::**#%#=:-
+=+=+==.===:.   .==--..-::.::.::-+#@%:-`
+};
+const terminalColors = {
+  cyan: '#71d0ff',
+  blue: '#6d8cff',
+  green: '#77e8b5',
+  yellow: '#ffd36d',
+  red: '#ff7890',
+  pink: '#ff86d3',
+  white: '#e8f7ff'
+};
 
 // These values are shared by every terminal command. In particular,
 // currentPath must live outside executeCommand() so it survives between
@@ -132,17 +201,17 @@ async function executeCommand({ cmd, flags, args }) {
       printTerminal(`Generating ${index + 1}/${scenes.length}: ${record.path}`);
       const controls = resolveCreativeControls(record);
       const params = getGenerationParams(controls);
-      const content = await openaiGen(resolveSceneContext(record, controls), params);
-      if (content === null) {
-        printTerminal(`Generation failed: ${record.path}`);
+      const generation = await openaiGen(resolveSceneContext(record, controls), params);
+      if (generation === null) {
+        printTerminal(`Generation failed: ${record.path}`, 'error');
         return;
       }
-      record.content = content;
+      record.content = generation.content;
       record.updatedAt = new Date().toISOString();
-      record.lastGeneration = { controls, params, generatedAt: record.updatedAt };
+      record.lastGeneration = { controls, params, ...generation.metrics, generatedAt: record.updatedAt };
       await saveRecord(recordDirectory, record);
       if (currentRecord?.id === record.id) {
-        mainEditor.value = content;
+        mainEditor.value = generation.content;
         setSaveStatus('saved');
       }
     }
@@ -230,8 +299,18 @@ async function executeCommand({ cmd, flags, args }) {
     return;
   }
 
+  if (cmd === 'neofetch' || cmd === 'neo') {
+    await showNeofetch(inputdir || 'cherenkov');
+    return;
+  }
+
+  if (cmd === 'color') {
+    setTerminalColor(inputdir || 'reset');
+    return;
+  }
+
   if (cmd === 'clear' || cmd === 'clr' || cmd === 'cls') {
-    terminalOutput.value = '';
+    terminalOutput.replaceChildren();
     return;
   }
 
@@ -245,6 +324,8 @@ async function executeCommand({ cmd, flags, args }) {
       'mv [-f|--force] <source> <destination>\n' +
       'rm [-r|--recursive] [-f|--force] <path|id> (combined: -rf)\n' +
       'generate [-m|--missing] [-s|--stale] [-f|--force] [-n|--dry-run] [path]\n' +
+      'neofetch [-a|--ascii] [boykisser|cherenkov|snep]\n' +
+      'color [cyan|blue|green|yellow|red|pink|white|reset]\n' +
       'clear | help'
     );
     return;
@@ -298,10 +379,123 @@ async function executeCommand({ cmd, flags, args }) {
   printTerminal(`Unknown command: ${cmd}`);
 }
 
-function printTerminal(message) {
-  terminalOutput.value += message + '\n';
+function printTerminal(message, tone = '') {
+  const entry = document.createElement('pre');
+  entry.className = `terminal-entry ${tone}`.trim();
+  entry.textContent = message + '\n';
+  terminalOutput.appendChild(entry);
   terminalOutput.scrollTop = terminalOutput.scrollHeight;
   renderUiState();
+}
+
+// One CSS variable controls the prompt, typed command, command output, and
+// neofetch information. Saving the name makes the choice survive a reload.
+function setTerminalColor(name, announce = true) {
+  const normalized = name.toLowerCase();
+  const color = normalized === 'reset' ? terminalColors.cyan : terminalColors[normalized];
+  if (!color) {
+    if (announce) printTerminal(`Unknown color: ${name}`, 'error');
+    return;
+  }
+  terminalShell.style.setProperty('--terminal-color', color);
+  localStorage.setItem('terminalColor', normalized === 'reset' ? 'cyan' : normalized);
+  if (announce) printTerminal(`Terminal color: ${normalized}`, 'success');
+}
+
+// Neofetch reads live browser information and only compares generation speed
+// samples made with the endpoint and model that are selected right now.
+async function showNeofetch(requestedName) {
+  const name = requestedName.toLowerCase().replace(/\.(jpg|jpeg|png)$/, '');
+  if (!neofetchAscii[name]) {
+    printTerminal(`Unknown ASCII variant: ${requestedName}\nAvailable: ${Object.keys(neofetchAscii).join(', ')}`, 'error');
+    return;
+  }
+
+  const endpoint = endpointInput.value.replace(/\/$/, '');
+  const samples = recordArray
+    .map(record => record.lastGeneration)
+    .filter(generation => generation?.endpoint === endpoint
+      && generation?.model === modelInput.value
+      && Number.isFinite(generation?.tokensPerSecond));
+  const speeds = samples.map(generation => generation.tokensPerSecond);
+  // Storage estimates are optional browser features. Neofetch should still
+  // render if a privacy setting blocks one of these queries.
+  const storage = navigator.storage.estimate
+    ? await navigator.storage.estimate().catch(() => ({}))
+    : {};
+  const persisted = navigator.storage.persisted
+    ? await navigator.storage.persisted().catch(() => false)
+    : false;
+  const counts = Object.fromEntries(['folder', 'book', 'chapter', 'scene'].map(type => [type, recordArray.filter(record => record.type === type).length]));
+  const controls = currentRecord ? resolveCreativeControls(currentRecord) : globalCreativeControls;
+  const params = getGenerationParams(controls);
+  const rows = [
+    ['ascii', name],
+    ['browser', getBrowserName()],
+    ['viewport', `${window.innerWidth}x${window.innerHeight}`],
+    ['api', endpoint || 'not configured'],
+    ['model', modelInput.value || 'not selected'],
+    ['median tok/s', speeds.length ? median(speeds).toFixed(2) : 'no samples'],
+    ['speed samples', String(speeds.length)],
+    ['storage', `${formatBytes(storage.usage)} / ${formatBytes(storage.quota)}`],
+    ['persistent', persisted ? 'yes' : 'no'],
+    ['records', `${recordArray.length} (${counts.scene} scenes)`],
+    ['hierarchy', `${counts.folder}F ${counts.book}B ${counts.chapter}C`],
+    ['path', currentPath],
+    ['params', `${params.max_tokens} max · t ${params.temperature} · p ${params.top_p}`]
+  ];
+  renderNeofetch(name, rows);
+}
+
+function renderNeofetch(name, rows) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'neofetch-output';
+  const art = document.createElement('pre');
+  art.className = `neofetch-ascii ${name}`;
+  art.textContent = neofetchAscii[name];
+  const info = document.createElement('div');
+  info.className = 'neofetch-info';
+  const title = document.createElement('div');
+  title.className = 'neofetch-title';
+  title.textContent = 'cherenkov@browser';
+  info.appendChild(title);
+  for (const [label, value] of rows) {
+    const row = document.createElement('div');
+    row.className = 'neofetch-row';
+    const labelElement = document.createElement('span');
+    labelElement.className = 'neofetch-label';
+    labelElement.textContent = `${label}:`;
+    const valueElement = document.createElement('span');
+    valueElement.className = 'neofetch-value';
+    valueElement.textContent = value;
+    row.append(labelElement, valueElement);
+    info.appendChild(row);
+  }
+  wrapper.append(art, info);
+  terminalOutput.appendChild(wrapper);
+  terminalOutput.scrollTop = terminalOutput.scrollHeight;
+}
+
+function median(values) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function formatBytes(bytes = 0) {
+  if (!bytes) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const unit = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return `${(bytes / 1024 ** unit).toFixed(unit ? 1 : 0)} ${units[unit]}`;
+}
+
+function getBrowserName() {
+  const userAgent = navigator.userAgent;
+  if (userAgent.includes('Edg/')) return 'Edge';
+  if (userAgent.includes('Firefox/')) return 'Firefox';
+  if (userAgent.includes('Chrome/')) return 'Chrome';
+  if (userAgent.includes('Safari/')) return 'Safari';
+  return navigator.platform || 'Browser';
 }
 
 // Keep the small status areas in sync without introducing application state
@@ -555,7 +749,9 @@ async function createRecord(path, requestedType) {
 // system prompt and inherited story context are separate message roles.
 async function openaiGen(context, params) {
   try {
-    const response = await fetch(`${endpointInput.value.replace(/\/$/, '')}/chat/completions`, {
+    const startedAt = performance.now();
+    const endpoint = endpointInput.value.replace(/\/$/, '');
+    const response = await fetch(`${endpoint}/chat/completions`, {
       method: 'POST',
       headers: apiHeaders(),
       body: JSON.stringify({
@@ -571,7 +767,18 @@ async function openaiGen(context, params) {
     if (!response.ok || output?.error) throw new Error(output?.error?.message || `HTTP ${response.status}`);
     const content = output?.choices?.[0]?.message?.content;
     if (typeof content !== 'string' || !content.trim()) throw new Error('API response missing content.');
-    return content;
+    const elapsedSeconds = (performance.now() - startedAt) / 1000;
+    const completionTokens = Number(output.usage?.completion_tokens) || Math.max(1, Math.round(content.length / 4));
+    return {
+      content,
+      metrics: {
+        endpoint,
+        model: modelInput.value,
+        completionTokens,
+        elapsedSeconds: Number(elapsedSeconds.toFixed(3)),
+        tokensPerSecond: Number((completionTokens / elapsedSeconds).toFixed(2))
+      }
+    };
   } catch (error) {
     console.error('Generation failed:', error);
     return null;

@@ -31,6 +31,10 @@ rm -rf /folder/book
 generate /folder/book
 generate --missing /folder/book
 generate --dry-run --stale /folder/book
+neofetch --ascii boykisser
+neofetch --ascii cherenkov
+neofetch --ascii snep
+color pink
 clear
 help
 ```
@@ -45,6 +49,10 @@ Short flags can be combined, so `rm -rf /folder/book` is the same as
 | `mv` | `-f`, `--force` replaces an existing destination of the same type. |
 | `rm` | `-r`, `--recursive` removes containers; `-f`, `--force` suppresses missing-path errors. |
 | `generate` | `-m`, `--missing`; `-s`, `--stale`; `-f`, `--force`; `-n`, `--dry-run`. |
+| `neofetch` | `-a`, `--ascii` accepts `boykisser`, `cherenkov`, or `snep`. The flag is optional. |
+| `color` | Sets all regular terminal input and output to `cyan`, `blue`, `green`, `yellow`, `red`, `pink`, or `white`; `reset` restores cyan. |
+
+`neofetch` shows the current endpoint and model, viewport, browser storage usage and quota, story-record counts, the active path and generation parameters. Its median token rate uses generation samples recorded for the currently selected endpoint and model, so switching either one starts with no matching samples.
 
 Paths use the fixed hierarchy `/folder/book/chapter/scene`. OPFS stores each record as `/records/<immutable-id>.json`; moving a story node changes its virtual `path` and its descendants, not its storage filename.
 
@@ -71,6 +79,9 @@ flowchart LR
         ARECORDS --> ACTX[Inherited scene context]
         ACTX --> AAPI[System and user messages]
         AAPI --> ARECORDS
+        ACMD --> ANEO[Colored neofetch renderer]
+        ARECORDS --> ANEO
+        ABROWSER[Storage quota and viewport] --> ANEO
     end
 ```
 
