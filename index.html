@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>cherenkov</title>
+        <link rel="stylesheet" href="styles.css">
+        <script src="main.js" defer></script>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    </head>
+    <body>
+       <div class="container"> 
+            <h1 class="title">cherenkov</h1>
+
+            <textarea class="resizable-text-area" placeholder="editor" id="main-editor"></textarea>
+            <div class="box" id="explorer">
+                <h3 class="text">file explorer</h3>
+                <p class="text" id="explorer-content"></p>
+            </div>
+
+            <textarea class="text-area" id="terminal-output" readonly></textarea>
+            <input type="text" class="input-field" id="terminal-input">
+            <div class="box" id="config-box">
+                <textarea class="text-area-small" placeholder="system prompt" id="system-prompt"></textarea>
+                <input type="text" class="input-field" placeholder="endpoint" id="openai-endpoint">
+                <input type="text" class="input-field" placeholder="api key" id="openai-api-key">
+                <input type="text" class="input-field" placeholder="model" id="openai-model">
+                <select class="input-field" id="available-models">
+                    <option value="">available models</option>
+                </select>
+                <button class="button" id="save-config-button">Save Config</button>
+                <button class="button" id="get-models-button">Get Models</button>
+            </div>
+            <h6 id="center-text" class="center-text">made with ❤️‍🔥 by colin</h6>
+        </div>
+    </body>
+</html>
