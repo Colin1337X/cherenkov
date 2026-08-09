@@ -1,110 +1,279 @@
 //first shits first
 async function init() {
-    
-
     saveConfigButton.addEventListener('click', saveconfig);
     getModelsButton.addEventListener('click', getModels);
+    availableModelsSelect.addEventListener('change', syncmodelselect);
     loadconfig();
     await getModels();
     await initStorage().then(root => opfsroot = root);
-    availableModelsSelect.addEventListener('change', syncmodelselect);
     recordDirectory = await getRecordDirectory();
-    recordArray = await loadAllRecords(recordDirectory);
+    await refreshRecords();
     commandInput.addEventListener('keydown', async (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
         const command = commandInput.value.trim();
+        commandInput.value = '';
         await tokenizecommand(command);
       }
     });
-    
-
 }
-const explorer = document.getElementById("explorer");
+
 const commandInput = document.getElementById("terminal-input");
+const mainEditor = document.getElementById("main-editor");
+const terminalOutput = document.getElementById("terminal-output");
 let recordDirectory;
 let recordArray = [];
+let currentPath = '/';
+let currentRecord = null;
 
 
 async function tokenizecommand(command) {
-  command = commandInput.value.trim();
   if (command === '') {
     return null;
   }
-  command.flags = command.match(/--\S*/g) || [];
-  command.cmd = (command.match(/^\S*/));
-  command.directories = command.match(/[^\s"']+\/[^\s"']+/g) || [];
-  command.inputdir = command.directories.slice(-1)[0] || null;
-  command.outputdir = command.directories.slice(-2)[0] || null;
-  return await executecommand(command.cmd, command.flags, command.inputdir, command.outputdir);
+  const parts = command.match(/"[^"]*"|'[^']*'|\S+/g)?.map(part => part.replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, '$1$2')) || [];
+  return executecommand({
+    cmd: parts.shift().toLowerCase(),
+    flags: parts.filter(part => part.startsWith('--')),
+    args: parts.filter(part => !part.startsWith('--'))
+  });
 }
 
-async function executecommand(cmd, flags, inputdir, outputdir) {
-  let pwd
+async function executecommand({ cmd, flags, args }) {
+  const [inputdir, outputdir] = args;
+
   if (cmd === 'generate' || cmd === 'gen' || cmd === 'g') {
+    const destination = resolvePath(inputdir || currentPath);
+    let scenes = getScenesUnder(destination);
     if (flags.includes('--missing')) {
-      document.getElementById("terminal-output").value += 'Generating text with missing context...\n'
-      console.log('Generating text with missing context...');
-      for (const record of recordArray == null ? [] : recordArray) {  
-        await openaigen(
-          document.getElementById("openai-endpoint").value,
-          document.getElementById("openai-api-key").value,
-          document.getElementById("openai-model").value,
-          {}, // genparams placeholder
-          pwd.value,
-          document.getElementById("system-prompt").value
-        );
+      scenes = scenes.filter(record => !record.content?.trim());
+    }
+    if (!scenes.length) {
+      printTerminal('No scenes to generate.');
+      return;
+    }
+    for (const [index, record] of scenes.entries()) {
+      printTerminal(`Generating ${index + 1}/${scenes.length}: ${record.path}`);
+      const content = await openaigen(resolveSceneContext(record));
+      if (content === null) {
+        printTerminal(`Generation failed: ${record.path}`);
+        return;
       }
+      record.content = content;
+      record.updatedAt = new Date().toISOString();
+      await saveRecord(recordDirectory, record);
+      if (currentRecord?.id === record.id) mainEditor.value = content;
+    }
+    await refreshRecords();
+    printTerminal(`Generated ${scenes.length} scene${scenes.length === 1 ? '' : 's'}.`);
+    return;
   }
+
   if (cmd === 'save' || cmd === 's') {
-    await saveRecord(recordDirectory, { id: crypto.randomUUID(), content: mainEditor.value });
+    if (!currentRecord) {
+      printTerminal('Load or create a scene before saving.');
+      return;
+    }
+    currentRecord.content = mainEditor.value;
+    currentRecord.updatedAt = new Date().toISOString();
+    await saveRecord(recordDirectory, currentRecord);
+    await refreshRecords();
+    printTerminal(`Saved ${currentRecord.path}.`);
+    return;
   }
+
   if (cmd === 'load' || cmd === 'l') {
-    document.getElementById("terminal-output").value += 'Loading record: ' + inputdir + '\n'
-    console.log('Loading record:', inputdir);
-    const mainEditor = document.getElementById("main-editor");
-    mainEditor.value = await loadRecord(recordDirectory, inputdir || pwd);
-    console.log('Loaded record:', mainEditor.value);
-    pwd = inputdir;
+    const record = findRecord(inputdir || currentPath);
+    if (!record) {
+      printTerminal(`Record not found: ${inputdir || currentPath}`);
+      return;
+    }
+    currentRecord = record;
+    currentPath = record.path;
+    mainEditor.value = record.content || '';
+    printTerminal(`Loaded ${record.path}.`);
+    return;
   }
-  if (cmd === 'delete' || cmd === 'del' || cmd === 'd') {
-    await deleteRecord(recordDirectory, inputdir);
+
+  if (cmd === 'delete' || cmd === 'del' || cmd === 'rm' || cmd === 'd') {
+    const record = findRecord(inputdir || currentPath);
+    if (!record) {
+      printTerminal(`Record not found: ${inputdir || currentPath}`);
+      return;
+    }
+    const records = record.type === 'scene'
+      ? [record]
+      : recordArray.filter(item => item.path === record.path || isPathInside(item.path, record.path));
+    for (const item of records) await deleteRecord(recordDirectory, item.id);
+    if (records.some(item => item.id === currentRecord?.id)) {
+      currentRecord = null;
+      currentPath = '/';
+      mainEditor.value = '';
+    }
+    await refreshRecords();
+    printTerminal(`Deleted ${records.length} record${records.length === 1 ? '' : 's'}.`);
+    return;
   }
+
   if (cmd === 'list' || cmd === 'ls') {
-    recordArray = await loadAllRecords(recordDirectory);
-    document.getElementById("terminal-output").value += 'Available records:\n' + recordArray.join('path\n') + '\n' 
-    console.log('Available records:', recordArray); 
-    document.getElementById("explorer-content").textContent = recordArray.join('path\n') + '\n';
+    const scope = resolvePath(inputdir || currentPath);
+    const records = recordArray.filter(record => scope === '/' || record.path === scope || isPathInside(record.path, scope));
+    printTerminal(records.length ? records.map(formatRecord).join('\n') : 'No records.');
+    return;
   }
+
   if (cmd === 'clear' || cmd === 'clr' || cmd === 'cls') {
-    document.getElementById("terminal-output").value = '';
+    terminalOutput.value = '';
+    return;
   }
+
   if (cmd === 'help' || cmd === 'h') {
-    document.getElementById("terminal-output").value += 'Available commands:\n' + 
-    'generate | gen | g: Generate text using API\n' +
-    'save | s: Save current editor content as a record\n' +
-    'load | l <record_id>: Load a record by ID\n' +
-    'delete | del | d <record_id>: Delete a record by ID\n' +
-    'list | ls: List all available records\n' +
-    'clear | clr | cls: Clear the terminal output\n' +
-    'help | h: Show this help message\n' +
-    'move | mv <record_id> <new_directory>: Move a record to a new directory\n';
+    printTerminal('Commands: pwd, cd <path>, ls [path], touch <scene>, mkdir <path>, load <path|id>, save, mv <source> <destination>, rm <path|id>, generate [--missing] [path], clear, help');
+    return;
   }
+
   if (cmd === 'move' || cmd === 'mv') {
-    await moveRecord(recordDirectory, inputdir, outputdir);
+    if (!inputdir || !outputdir) {
+      printTerminal('Usage: mv <source> <destination>');
+      return;
+    }
+    const moved = await moveRecord(resolvePath(inputdir), resolvePath(outputdir));
+    if (moved) printTerminal(`Moved ${inputdir} to ${outputdir}.`);
+    return;
   }
+
   if (cmd === 'new' || cmd === 'touch') {
-    await saveRecord(recordDirectory, { id: crypto.randomUUID(), content: '' });
+    if (!inputdir) return printTerminal('Usage: touch <path>');
+    await createRecord(resolvePath(inputdir), 'scene');
+    return;
   }
+
+  if (cmd === 'mkdir') {
+    if (!inputdir) return printTerminal('Usage: mkdir <path>');
+    await createRecord(resolvePath(inputdir));
+    return;
+  }
+
+  if (cmd === 'pwd') {
+    printTerminal(currentPath);
+    return;
+  }
+
+  if (cmd === 'cd') {
+    const path = resolvePath(inputdir || '/');
+    if (path !== '/' && !findRecord(path)) return printTerminal(`Path not found: ${path}`);
+    currentPath = path;
+    printTerminal(currentPath);
+    return;
+  }
+
+  printTerminal(`Unknown command: ${cmd}`);
 }
+
+function printTerminal(message) {
+  terminalOutput.value += message + '\n';
+  terminalOutput.scrollTop = terminalOutput.scrollHeight;
+}
+
+function normalizePath(path) {
+  const parts = [];
+  for (const part of path.split('/')) {
+    if (!part || part === '.') continue;
+    part === '..' ? parts.pop() : parts.push(part);
+  }
+  return '/' + parts.join('/');
+}
+
+function resolvePath(path) {
+  if (!path || path === '.') return currentPath;
+  return normalizePath(path.startsWith('/') ? path : `${currentPath}/${path}`);
+}
+
+function isPathInside(path, scope) {
+  return path?.startsWith(scope === '/' ? '/' : scope + '/');
+}
+
+function inferType(path) {
+  return ['root', 'folder', 'book', 'chapter', 'scene'][normalizePath(path).split('/').filter(Boolean).length] || null;
+}
+
+function findRecord(pathOrId) {
+  if (!pathOrId) return null;
+  return recordArray.find(record => record.id === pathOrId)
+    || recordArray.find(record => record.path === resolvePath(pathOrId))
+    || null;
+}
+
+function formatRecord(record) {
+  return `${(record.type || 'record').padEnd(7)} ${record.path || record.id}`;
+}
+
+function getScenesUnder(path) {
+  return recordArray
+    .filter(record => record.type === 'scene' && (record.path === path || isPathInside(record.path, path)))
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.path.localeCompare(b.path));
+}
+
+function resolveSceneContext(scene) {
+  return recordArray
+    .filter(record => record.path && (record.path === scene.path || isPathInside(scene.path, record.path)))
+    .sort((a, b) => a.path.length - b.path.length)
+    .map(record => [
+      `${record.type}: ${record.path}`,
+      record.premise,
+      record.instructions,
+      record.type === 'scene' ? record.content : null
+    ].filter(Boolean).join('\n'))
+    .join('\n\n');
+}
+
+async function refreshRecords() {
+  recordArray = await loadAllRecords(recordDirectory);
+  document.getElementById('explorer-content').textContent = recordArray
+    .sort((a, b) => (a.path || a.id).localeCompare(b.path || b.id))
+    .map(formatRecord)
+    .join('\n');
+}
+
+async function createRecord(path, requestedType) {
+  if (findRecord(path)) return printTerminal(`Path already exists: ${path}`);
+  const type = requestedType || inferType(path);
+  if (!type || type === 'root' || (requestedType === 'scene' && inferType(path) !== 'scene')) {
+    return printTerminal('Paths must follow /folder/book/chapter/scene.');
+  }
+  const parentPath = normalizePath(path.substring(0, path.lastIndexOf('/')) || '/');
+  if (parentPath !== '/' && !findRecord(parentPath)) return printTerminal(`Parent path not found: ${parentPath}`);
+  const now = new Date().toISOString();
+  const record = {
+    id: crypto.randomUUID(),
+    type,
+    path,
+    parentPath,
+    name: path.split('/').pop(),
+    order: recordArray.filter(item => item.parentPath === parentPath).length,
+    premise: '',
+    content: '',
+    createdAt: now,
+    updatedAt: now
+  };
+  await saveRecord(recordDirectory, record);
+  await refreshRecords();
+  if (type === 'scene') {
+    currentRecord = record;
+    currentPath = path;
+    mainEditor.value = '';
+  }
+  printTerminal(`Created ${type}: ${path}`);
 }
 
 //openai shit
-async function openaigen(endpoint, apikey, model, genparams, currentcontext, systemprompt) {
-  let response;
-  let output;
+async function openaigen(currentcontext) {
+  const endpoint = document.getElementById("openai-endpoint").value.replace(/\/$/, '');
+  const apikey = document.getElementById("openai-api-key").value;
+  const model = document.getElementById("openai-model").value;
+  const systemprompt = document.getElementById("system-prompt").value;
   try { 
-        response = await fetch(endpoint + (endpoint.endsWith('/') ? '' : '/') + "chat/completions", {
+        const response = await fetch(endpoint + "/chat/completions", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -113,68 +282,20 @@ async function openaigen(endpoint, apikey, model, genparams, currentcontext, sys
             body: JSON.stringify({
               "model": model,
               "messages": [
-                {"role": "system", "content": await promptcompose(currentcontext, systemprompt)},
-                {genparams},
-                
+                {"role": "system", "content": systemprompt},
+                {"role": "user", "content": currentcontext}
               ]
             })
         }); 
-          output = await response.json();
-          if (output && output.error) {
-            console.error('API error:', output.error);
-            return null;
-          }
-          if (response.status==401 || response.status==403) {
-            console.error('Unauthorized: Invalid API key or endpoint.');
-            return null;
-          }
-          if (response.status==429) {
-            console.error('Rate limit exceeded: Too many requests.');
-            return null;
-          }
-          if (response.status==500) {
-            console.error('Internal server error: The server encountered an unexpected condition.');
-            return null;
-          }
-          if (response.status==503) {
-            console.error('Service unavailable: The server is currently unable to handle the request.');
-            return null;
-          }
-          if (response.status==404) {
-            console.error('Not found: The requested resource could not be found. Check the endpoint URL.');
-            return null;
-          }
-          if (response.status==400) {
-            console.error('Bad request: The request was invalid or cannot be served. Check the request payload.');
-            return null;
-          }
-          if (response.ok === false) {
-            console.error('API response:', output, "Status:", response.status );
-            console.error(`Misc. HTTP error! Status: ${response.status}`);
-            return null;
-          }
-          if (!output || output.choices?.[0]?.message?.content === null || output.choices?.[0]?.message?.content === undefined || output.choices?.[0]?.message?.content === '' || !output.choices?.[0]?.message?.content) {
-            console.error('API response missing content:', output);
-            return null;
-          }
-          
-          else {
-            console.debug('API response:', output, "Status:", response.status );
-            console.log(output.choices?.[0]?.message?.content);
-            document.getElementById("main-editor").value += output.choices?.[0]?.message?.content;
-          }
+        const output = await response.json();
+        if (!response.ok || output?.error) throw new Error(output?.error?.message || `HTTP ${response.status}`);
+        const content = output?.choices?.[0]?.message?.content;
+        if (typeof content !== 'string' || !content.trim()) throw new Error('API response missing content.');
+        return content;
     }
-      catch (error) {
-      if (error instanceof SyntaxError) {
-        console.error('Failed to parse JSON response:', error);
-        return null;
-      }
-      
-
-      else {
-        console.error('Unexpected error:', error);
-        return null;
-      }
+    catch (error) {
+      console.error('Generation failed:', error);
+      return null;
     }
 }
     
@@ -188,9 +309,9 @@ function loadconfig() {
         if (config === null) {
             return;
         }
-        document.getElementById("openai-endpoint").value = config.endpoint = (config.endpoint !== undefined && config.endpoint !== null && config.endpoint !== '') ? config.endpoint : "https://nothing.here:8080/v1";
-        document.getElementById("openai-api-key").value = config.apiKey = (config.apiKey !== undefined && config.apiKey !== null && config.apiKey !== '') ? config.apiKey : "";
-        document.getElementById("openai-model").value = config.model = (config.model !== undefined && config.model !== null && config.model !== '') ? config.model : "example model";
+        document.getElementById("openai-endpoint").value = config.endpoint || "https://nothing.here:8080/v1";
+        document.getElementById("openai-api-key").value = config.apiKey || "";
+        document.getElementById("openai-model").value = config.model || "example model";
   } catch (error) {
       console.error('Failed to load config:', error);
   }
@@ -203,10 +324,6 @@ function saveconfig() {
     };
     localStorage.setItem("config", JSON.stringify(config));
 }
-function promptcompose(ctx, sysprmpt) {
-    return "System Prompt:" + (sysprmpt) + "\nContext:" + (ctx);
-}
-
 //dom shit
 const saveConfigButton = document.getElementById("save-config-button");
 const getModelsButton = document.getElementById("get-models-button");
@@ -232,10 +349,7 @@ async function getModels() {
     apiKeyInput.value = "";
   }
 
-  if (!endpointInput?.value || !selectElement) {
-    console.error('Required DOM elements or inputs are missing.');
-    return;
-  }
+  if (!endpointInput.value) return;
 
   const url = `${endpointInput.value.replace(/\/$/, '')}/models`;
   selectElement.innerHTML = '';
@@ -257,7 +371,7 @@ async function getModels() {
       return;
     }
 
-    if (!availableModels?.data) {
+    if (!Array.isArray(availableModels?.data)) {
       throw new Error('Invalid API response format: "data" property missing.');
     }
 
@@ -302,14 +416,9 @@ async function readJson(fileHandle) {
   return JSON.parse(contents);
 }
 async function writeJson(fileHandle, data) {
-  try {
-    const writable = await fileHandle.createWritable();
-    await writable.write(JSON.stringify(data, null, 2));
-    await writable.close();
-  } catch (error) {
-    console.error('Failed to write JSON to file:', error);
-    return null;
-  }
+  const writable = await fileHandle.createWritable();
+  await writable.write(JSON.stringify(data, null, 2));
+  await writable.close();
 }
 async function deleteFile(fileHandle) {
   await fileHandle.remove();
@@ -329,45 +438,9 @@ async function getRecordHandle(recordsDirectory, id, writeifnotfound) {
 }
 
 async function saveRecord(recordsDirectory, record) {
-  if (!record || !record.id) {
-    console.warn('Invalid record: Record must have an "id" property.');   
-    if (!record) {
-      console.error('Record is null or undefined:', record, "Please provide a valid record object.");
-      return null;
-    }
-    if (!record.id) {
-        console.warn('Record is missing "id" property:', record);
-        record.id = crypto.randomUUID();
-        if(await writeJson(await getRecordHandle(recordsDirectory, record.id, true), record) == undefined){
-          console.log('Record saved with generated id:', record.id);
-        }
-        else {
-          console.error('Failed to save record with generated id:', record);
-        }
-        return null;
-      }
-    }
-  const fileHandle = await getRecordHandle(
-    recordsDirectory,
-    record.id,
-    true
-  );
-  let writeResult = await writeJson(fileHandle, record);
-  if (writeResult === null) {
-    console.error('Failed to save record:', record);
-    console.error('Please check the file system permissions and available storage space.');
-    console.debug('Record data:', record);
-    console.debug('File handle:', fileHandle);
-    console.debug('Records directory:', recordsDirectory);
-    console.debug('OPFS root:', opfsroot);
-    console.debug('Current working directory:', opfsroot);
-    console.debug('Available storage estimate:', await navigator.storage.estimate());
-    console.debug('Available storage quota:', (await navigator.storage.estimate()).quota);
-    console.debug('Available storage usage:', (await navigator.storage.estimate()).usage);
-    console.debug('Available storage usage details:', (await navigator.storage.estimate()).usageDetails);
-    console.warn('Attempting to write record again after failure...');
-    await writeJson(fileHandle, record);
-  }
+  if (!record) throw new TypeError('A record is required.');
+  record.id ||= crypto.randomUUID();
+  await writeJson(await getRecordHandle(recordsDirectory, record.id, true), record);
 }
 
 
@@ -384,12 +457,38 @@ async function loadRecord(recordsDirectory, id) {
   }
 }
 
-async function moveRecord(recordsDirectory, id, type, path, newDirectory, newId, newPath) {
-  const fileHandle = await getRecordHandle(recordsDirectory, id);
-  const newFileHandle = await getRecordHandle(newDirectory, newId, true);
-  const record = await readJson(fileHandle);
-  await writeJson(newFileHandle, record);
-  await deleteFile(fileHandle);
+async function moveRecord(sourcePath, newPath) {
+  const record = findRecord(sourcePath);
+  if (!record) {
+    printTerminal(`Record not found: ${sourcePath}`);
+    return false;
+  }
+  if (newPath === sourcePath || isPathInside(newPath, sourcePath)) {
+    printTerminal('A record cannot be moved into itself.');
+    return false;
+  }
+  if (findRecord(newPath) || inferType(newPath) !== record.type) {
+    printTerminal(`Invalid destination: ${newPath}`);
+    return false;
+  }
+  const parentPath = normalizePath(newPath.substring(0, newPath.lastIndexOf('/')) || '/');
+  if (parentPath !== '/' && !findRecord(parentPath)) {
+    printTerminal(`Parent path not found: ${parentPath}`);
+    return false;
+  }
+  for (const item of recordArray.filter(item => item.path === sourcePath || isPathInside(item.path, sourcePath))) {
+    item.path = newPath + item.path.slice(sourcePath.length);
+    item.parentPath = normalizePath(item.path.substring(0, item.path.lastIndexOf('/')) || '/');
+    item.name = item.path.split('/').pop();
+    item.updatedAt = new Date().toISOString();
+    await saveRecord(recordDirectory, item);
+  }
+  if (currentPath === sourcePath || isPathInside(currentPath, sourcePath)) {
+    currentPath = newPath + currentPath.slice(sourcePath.length);
+  }
+  await refreshRecords();
+  currentRecord = currentRecord ? recordArray.find(item => item.id === currentRecord.id) : null;
+  return true;
 }
 
 async function loadAllRecords(recordsDirectory) {
@@ -417,37 +516,9 @@ async function deleteRecord(recordsDirectory, id) {
     await deleteFile(fileHandle);
   } catch (error) {
     if (error.name === 'NotFoundError') {
-      console.error(`Record with id ${id} does not exist.`);
       return;
     }
-    if (error.name === 'InvalidStateError') {
-      console.error(`Cannot delete record with id ${id}:`, error);
-      return;
-    }
-    if (error.name === 'SecurityError') {
-      console.error(`Permission denied to delete record with id ${id}:`, error);
-      return;
-    }
-    if (error.name === 'TypeError') {
-      console.error(`Invalid file handle for record with id ${id}:`, error);
-      return;
-    }
-    if (error.name === 'DOMException') {
-      console.error(`DOMException occurred while deleting record with id ${id}:`, error);
-      return;
-    }
-    if (error.name === 'AbortError') {
-      console.error(`Operation aborted while deleting record with id ${id}:`, error);
-      return;
-    }
-    if (error.name === 'QuotaExceededError') {
-      console.error(`Quota exceeded while deleting record with id ${id}:`, error);
-      return;
-    }
-    else {
-      console.error(`Unexpected error while deleting record with id ${id}:`, error);
-      return;
-    }
+    throw error;
   }
 }
 
