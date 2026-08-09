@@ -453,7 +453,9 @@ async function renderColoredAscii(canvas, imageUrl) {
   context.scale(scale, scale);
   context.font = '13px "VT323"';
   context.textBaseline = 'top';
-  const ramp = '@%#*+=-:. ';
+  // Every brightness level uses a visible ASCII character. A trailing space
+  // would discard the source color of bright pixels such as snow or white fur.
+  const ramp = '@%#*+=-:.,';
   for (let row = 0; row < rows; row++) {
     for (let column = 0; column < columns; column++) {
       const pixel = (row * columns + column) * 4;
@@ -462,7 +464,6 @@ async function renderColoredAscii(canvas, imageUrl) {
       const blue = pixels[pixel + 2];
       const light = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
       const character = ramp[Math.min(ramp.length - 1, Math.floor(light / 256 * ramp.length))];
-      if (character === ' ') continue;
       context.fillStyle = `rgb(${red} ${green} ${blue})`;
       context.fillText(character, column * cellWidth, row * cellHeight);
     }
