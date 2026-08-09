@@ -305,6 +305,10 @@ textarea::placeholder {
   transition: background 100ms linear;
 }
 
+.slider[data-source="inherited"] {
+  opacity: 0.7;
+}
+
 .slider::-webkit-slider-thumb {
   width: 15px;
   height: 15px;
@@ -367,6 +371,11 @@ textarea::placeholder {
   border-color: var(--line-bright);
   background: #020b10;
   box-shadow: 0 0 0 3px rgba(1, 135, 224, 0.1);
+}
+
+#creative-controls .text-area-small[data-source="inherited"] {
+  border-style: dashed;
+  opacity: 0.78;
 }
 
 .config-panel {

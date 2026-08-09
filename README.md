@@ -4,6 +4,8 @@ Cherenkov is a framework-free, browser-based story generator controlled through 
 
 The workspace responds from wide desktop layouts down to narrow phone screens. The editor remains the primary surface, creative controls feed directly into scene prompts, and the combined terminal uses the bundled `VT323-Regular.ttf` font with a monospace fallback.
 
+Creative controls inherit through `global defaults → folder → book → chapter → scene`. A record stores only the values edited at that level; reset removes its local overrides. Generation maps length to `max_tokens`, chaos to `temperature`, pacing to `top_p`, and tension to `presence_penalty`. Dialogue share and prose notes remain prompt guidance.
+
 Serve the directory over localhost so the browser can use Origin Private File System (OPFS):
 
 ```powershell

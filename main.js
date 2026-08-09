@@ -5,9 +5,10 @@ async function init() {
     saveConfigButton.addEventListener('click', saveConfig);
     getModelsButton.addEventListener('click', getModels);
     availableModelsSelect.addEventListener('change', syncModelSelect);
+    globalCreativeControls = getDefaultCreativeControls();
     setupCreativeControls();
     loadConfig();
-    refreshCreativeControls();
+    showCreativeControls(globalCreativeControls);
     await getModels();
     opfsRoot = await navigator.storage.getDirectory();
     recordDirectory = await getRecordDirectory();
@@ -17,7 +18,6 @@ async function init() {
       setSaveStatus('unsaved');
       renderUiState();
     });
-    document.getElementById('creative-controls').addEventListener('input', () => setTerminalState('controls changed'));
     resetCreativeControlsButton.addEventListener('click', resetCreativeControls);
     commandInput.addEventListener('keydown', async (event) => {
       if (event.key === 'Enter') {
@@ -76,6 +76,8 @@ let recordDirectory;
 let recordArray = [];
 let currentPath = '/';
 let currentRecord = null;
+let globalCreativeControls = {};
+let creativeOverrideIds = new Set();
 
 
 // Turn raw terminal text into one small command object. Flags are kept
@@ -128,13 +130,16 @@ async function executeCommand({ cmd, flags, args }) {
     }
     for (const [index, record] of scenes.entries()) {
       printTerminal(`Generating ${index + 1}/${scenes.length}: ${record.path}`);
-      const content = await openaiGen(resolveSceneContext(record));
+      const controls = resolveCreativeControls(record);
+      const params = getGenerationParams(controls);
+      const content = await openaiGen(resolveSceneContext(record, controls), params);
       if (content === null) {
         printTerminal(`Generation failed: ${record.path}`);
         return;
       }
       record.content = content;
       record.updatedAt = new Date().toISOString();
+      record.lastGeneration = { controls, params, generatedAt: record.updatedAt };
       await saveRecord(recordDirectory, record);
       if (currentRecord?.id === record.id) {
         mainEditor.value = content;
@@ -152,6 +157,7 @@ async function executeCommand({ cmd, flags, args }) {
       return;
     }
     currentRecord.content = mainEditor.value;
+    currentRecord.creativeControls = readCreativeOverrides();
     currentRecord.updatedAt = new Date().toISOString();
     await saveRecord(recordDirectory, currentRecord);
     await refreshRecords();
@@ -161,14 +167,27 @@ async function executeCommand({ cmd, flags, args }) {
   }
 
   if (cmd === 'load' || cmd === 'l') {
-    const record = findRecord(inputdir || currentPath);
+    const target = inputdir || currentPath;
+    if (resolvePath(target) === '/') {
+      currentRecord = null;
+      currentPath = '/';
+      mainEditor.value = '';
+      creativeOverrideIds.clear();
+      showCreativeControls(globalCreativeControls);
+      setSaveStatus('ready');
+      printTerminal('Loaded global creative defaults.');
+      return;
+    }
+    const record = findRecord(target);
     if (!record) {
-      printTerminal(`Record not found: ${inputdir || currentPath}`);
+      printTerminal(`Record not found: ${target}`);
       return;
     }
     currentRecord = record;
     currentPath = record.path;
     mainEditor.value = record.content || '';
+    creativeOverrideIds = new Set(Object.keys(record.creativeControls || {}));
+    showCreativeControls(resolveCreativeControls(record), creativeOverrideIds);
     setSaveStatus('saved');
     printTerminal(`Loaded ${record.path}.`);
     return;
@@ -193,6 +212,8 @@ async function executeCommand({ cmd, flags, args }) {
       currentRecord = null;
       currentPath = '/';
       mainEditor.value = '';
+      creativeOverrideIds.clear();
+      showCreativeControls(globalCreativeControls);
       setSaveStatus('ready');
     }
     await refreshRecords();
@@ -306,9 +327,8 @@ function setTerminalState(status) {
 // Sliders update both their visible values and their filled tracks immediately.
 // Reset uses the defaults declared beside each input in index.html.
 function setupCreativeControls() {
-  for (const slider of document.querySelectorAll('.slider')) {
-    slider.addEventListener('input', () => updateSlider(slider));
-  }
+  const panel = document.getElementById('creative-controls');
+  panel.addEventListener('input', handleCreativeInput);
 }
 
 function updateSlider(slider) {
@@ -318,21 +338,58 @@ function updateSlider(slider) {
   slider.style.setProperty('--slider-color', `hsl(${195 + Number(slider.value) * 1.25} 100% 62%)`);
 }
 
-function refreshCreativeControls() {
-  document.querySelectorAll('.slider').forEach(updateSlider);
+function getDefaultCreativeControls() {
+  return Object.fromEntries(creativeControlIds.map(id => {
+    const control = document.getElementById(id);
+    return [id, control.dataset.default ?? ''];
+  }));
+}
+
+function showCreativeControls(values, localIds = new Set()) {
+  for (const id of creativeControlIds) {
+    const control = document.getElementById(id);
+    control.value = values[id] ?? '';
+    control.dataset.source = currentRecord && !localIds.has(id) ? 'inherited' : 'local';
+    control.title = control.dataset.source === 'inherited' ? 'Inherited from a parent' : '';
+    if (control.matches('input[type="range"]')) updateSlider(control);
+  }
+}
+
+function handleCreativeInput(event) {
+  const control = event.target;
+  if (!creativeControlIds.includes(control.id)) return;
+  if (control.matches('input[type="range"]')) updateSlider(control);
+  if (currentRecord) {
+    creativeOverrideIds.add(control.id);
+    control.dataset.source = 'local';
+    control.title = '';
+    setSaveStatus('unsaved');
+  } else {
+    globalCreativeControls[control.id] = control.value;
+  }
+  setTerminalState('controls changed');
 }
 
 function resetCreativeControls() {
-  for (const id of creativeControlIds) {
-    const control = document.getElementById(id);
-    control.value = control.matches('input[type="range"]') ? control.dataset.default : '';
+  if (currentRecord) {
+    creativeOverrideIds.clear();
+    showCreativeControls(resolveCreativeControls(currentRecord, true), creativeOverrideIds);
+    setSaveStatus('unsaved');
+    setTerminalState('inheriting parent controls');
+  } else {
+    globalCreativeControls = getDefaultCreativeControls();
+    showCreativeControls(globalCreativeControls);
+    setTerminalState('controls reset');
   }
-  refreshCreativeControls();
-  setTerminalState('controls reset');
 }
 
 function readCreativeControls() {
   return Object.fromEntries(creativeControlIds.map(id => [id, document.getElementById(id).value]));
+}
+
+function readCreativeOverrides() {
+  const values = readCreativeControls();
+  return Object.fromEntries([...creativeOverrideIds].map(id => [id, values[id]]));
 }
 
 // Long and short flag names are accepted by the same command branches.
@@ -386,9 +443,23 @@ function getScenesUnder(path) {
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.path.localeCompare(b.path));
 }
 
+// Controls resolve through the same virtual hierarchy as story context.
+// Each record stores only its own overrides, so later parent edits still flow
+// down to children that have not overridden that specific value.
+function resolveCreativeControls(record, ignoreCurrent = false) {
+  const resolved = { ...globalCreativeControls };
+  const hierarchy = recordArray
+    .filter(item => item.path && (item.path === record.path || isPathInside(record.path, item.path)))
+    .sort((a, b) => a.path.length - b.path.length);
+  for (const item of hierarchy) {
+    if (!ignoreCurrent || item.id !== record.id) Object.assign(resolved, item.creativeControls || {});
+  }
+  return resolved;
+}
+
 // Build the user message from the scene and all of its ancestors. The order
 // is broad context first and scene-specific context last.
-function resolveSceneContext(scene) {
+function resolveSceneContext(scene, controls = resolveCreativeControls(scene)) {
   const hierarchy = recordArray
     .filter(record => record.path && (record.path === scene.path || isPathInside(scene.path, record.path)))
     .sort((a, b) => a.path.length - b.path.length)
@@ -399,13 +470,12 @@ function resolveSceneContext(scene) {
       record.type === 'scene' ? record.content : null
     ].filter(Boolean).join('\n'))
     .join('\n\n');
-  return [hierarchy, getCreativeContext()].filter(Boolean).join('\n\n');
+  return [hierarchy, getCreativeContext(controls)].filter(Boolean).join('\n\n');
 }
 
 // Creative controls are prompt guidance rather than a second settings engine.
 // This keeps them provider-independent while still making every control useful.
-function getCreativeContext() {
-  const values = readCreativeControls();
+function getCreativeContext(values) {
   const notes = [
     ['Core hook', values['premise-corehook']],
     ['Style guide', values['style-guide']],
@@ -421,6 +491,19 @@ function getCreativeContext() {
     `Tension: ${values.tension}/100`,
     ...notes.map(([label, value]) => `${label}: ${value}`)
   ].join('\n');
+}
+
+// Map only controls with a sensible API equivalent. Dialogue share and the
+// prose notes remain prompt guidance because chat APIs have no direct fields
+// for them.
+function getGenerationParams(values) {
+  const scale = (value, minimum, maximum) => minimum + Number(value) / 100 * (maximum - minimum);
+  return {
+    max_tokens: Math.round(scale(values.length, 256, 4096)),
+    temperature: Number(scale(values.chaos, 0.2, 1.5).toFixed(2)),
+    top_p: Number(scale(values.pacing, 0.65, 1).toFixed(2)),
+    presence_penalty: Number(scale(values.tension, 0, 0.8).toFixed(2))
+  };
 }
 
 async function refreshRecords() {
@@ -451,6 +534,7 @@ async function createRecord(path, requestedType) {
     order: recordArray.filter(item => item.parentPath === parentPath).length,
     premise: '',
     content: '',
+    creativeControls: {},
     createdAt: now,
     updatedAt: now
   };
@@ -460,6 +544,8 @@ async function createRecord(path, requestedType) {
     currentRecord = record;
     currentPath = path;
     mainEditor.value = '';
+    creativeOverrideIds.clear();
+    showCreativeControls(resolveCreativeControls(record), creativeOverrideIds);
     setSaveStatus('saved');
   }
   printTerminal(`Created ${type}: ${path}`);
@@ -467,13 +553,14 @@ async function createRecord(path, requestedType) {
 
 // Send one OpenAI-compatible chat-completions request for one scene. The
 // system prompt and inherited story context are separate message roles.
-async function openaiGen(context) {
+async function openaiGen(context, params) {
   try {
     const response = await fetch(`${endpointInput.value.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
       headers: apiHeaders(),
       body: JSON.stringify({
         model: modelInput.value,
+        ...params,
         messages: [
           { role: 'system', content: systemPromptInput.value },
           { role: 'user', content: context }
@@ -507,10 +594,7 @@ function loadConfig() {
     apiKeyInput.value = config.apiKey || '';
     modelInput.value = config.model || '';
     systemPromptInput.value = config.systemPrompt || '';
-    for (const [id, value] of Object.entries(config.creativeControls || {})) {
-      const control = document.getElementById(id);
-      if (control) control.value = value;
-    }
+    Object.assign(globalCreativeControls, config.creativeControls || {});
   } catch (error) {
     console.error('Failed to load config:', error);
   }
@@ -522,7 +606,7 @@ function saveConfig() {
     apiKey: apiKeyInput.value,
     model: modelInput.value,
     systemPrompt: systemPromptInput.value,
-    creativeControls: readCreativeControls()
+    creativeControls: globalCreativeControls
   }));
   setTerminalState('configuration saved');
 }
