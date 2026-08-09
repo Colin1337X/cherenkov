@@ -1,4 +1,6 @@
-//first shits first
+// Start the application after the deferred script has access to the page.
+// Configuration is loaded first, then OPFS records are loaded, and finally
+// the terminal listener is attached so commands always have storage ready.
 async function init() {
     saveConfigButton.addEventListener('click', saveconfig);
     getModelsButton.addEventListener('click', getModels);
@@ -21,12 +23,18 @@ async function init() {
 const commandInput = document.getElementById("terminal-input");
 const mainEditor = document.getElementById("main-editor");
 const terminalOutput = document.getElementById("terminal-output");
+
+// These values are shared by every terminal command. In particular,
+// currentPath must live outside executecommand() so it survives between
+// commands in the same way a shell's working directory does.
 let recordDirectory;
 let recordArray = [];
 let currentPath = '/';
 let currentRecord = null;
 
 
+// Turn raw terminal text into one small command object. Flags are kept
+// separate from positional arguments, and quoted values remain one argument.
 async function tokenizecommand(command) {
   if (command === '') {
     return null;
@@ -39,9 +47,14 @@ async function tokenizecommand(command) {
   });
 }
 
+// Dispatch one parsed command. Each branch returns after it finishes so the
+// handlers stay independent instead of accidentally nesting inside each other.
 async function executecommand({ cmd, flags, args }) {
   const [inputdir, outputdir] = args;
 
+  // A destination can be one scene or any container above it. Generation is
+  // deliberately sequential so each completed scene is saved before the next
+  // request begins. --missing simply removes scenes that already have prose.
   if (cmd === 'generate' || cmd === 'gen' || cmd === 'g') {
     const destination = resolvePath(inputdir || currentPath);
     let scenes = getScenesUnder(destination);
@@ -101,6 +114,7 @@ async function executecommand({ cmd, flags, args }) {
       printTerminal(`Record not found: ${inputdir || currentPath}`);
       return;
     }
+    // Removing a container also removes every record below its virtual path.
     const records = record.type === 'scene'
       ? [record]
       : recordArray.filter(item => item.path === record.path || isPathInside(item.path, record.path));
@@ -175,6 +189,9 @@ function printTerminal(message) {
   terminalOutput.scrollTop = terminalOutput.scrollHeight;
 }
 
+// Story paths are virtual. OPFS does not contain this folder structure; it
+// stores flat JSON files by immutable ID while each record carries its path.
+// Normalization removes duplicate separators, dots, and parent traversals.
 function normalizePath(path) {
   const parts = [];
   for (const part of path.split('/')) {
@@ -194,9 +211,12 @@ function isPathInside(path, scope) {
 }
 
 function inferType(path) {
+  // The hierarchy is fixed: /folder/book/chapter/scene.
   return ['root', 'folder', 'book', 'chapter', 'scene'][normalizePath(path).split('/').filter(Boolean).length] || null;
 }
 
+// IDs remain valid after a move, while paths are convenient in the terminal,
+// so record lookup accepts either form.
 function findRecord(pathOrId) {
   if (!pathOrId) return null;
   return recordArray.find(record => record.id === pathOrId)
@@ -214,6 +234,8 @@ function getScenesUnder(path) {
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.path.localeCompare(b.path));
 }
 
+// Build the user message from the scene and all of its ancestors. The order
+// is broad context first and scene-specific context last.
 function resolveSceneContext(scene) {
   return recordArray
     .filter(record => record.path && (record.path === scene.path || isPathInside(scene.path, record.path)))
@@ -235,6 +257,8 @@ async function refreshRecords() {
     .join('\n');
 }
 
+// New records use one consistent shape. The path depth supplies the node type,
+// and a scene created with touch becomes the active editor record immediately.
 async function createRecord(path, requestedType) {
   if (findRecord(path)) return printTerminal(`Path already exists: ${path}`);
   const type = requestedType || inferType(path);
@@ -266,7 +290,8 @@ async function createRecord(path, requestedType) {
   printTerminal(`Created ${type}: ${path}`);
 }
 
-//openai shit
+// Send one OpenAI-compatible chat-completions request for one scene. The
+// system prompt and inherited story context are separate message roles.
 async function openaigen(currentcontext) {
   const endpoint = document.getElementById("openai-endpoint").value.replace(/\/$/, '');
   const apikey = document.getElementById("openai-api-key").value;
@@ -302,7 +327,8 @@ async function openaigen(currentcontext) {
 
 
 
-//config shit
+// Store the small provider configuration in localStorage. Story records stay
+// in OPFS and are never mixed into this configuration object.
 function loadconfig() {
   try {
         const config = JSON.parse(localStorage.getItem("config"));
@@ -324,7 +350,7 @@ function saveconfig() {
     };
     localStorage.setItem("config", JSON.stringify(config));
 }
-//dom shit
+// These controls are present in index.html and are reused during startup.
 const saveConfigButton = document.getElementById("save-config-button");
 const getModelsButton = document.getElementById("get-models-button");
 const availableModelsSelect = document.getElementById("available-models");
@@ -332,9 +358,10 @@ const availableModelsSelect = document.getElementById("available-models");
 init();
 
 
-// fetching shit
+// Fetch the model list from an OpenAI-compatible /models endpoint and replace
+// the selector options with the IDs returned by the provider.
 async function getModels() {
-  // 1. Get DOM elements and validate inputs
+  // Read and validate the three controls needed for this request.
   const endpointInput = document.getElementById('openai-endpoint');
   const apiKeyInput = document.getElementById('openai-api-key');
   const selectElement = document.getElementById('available-models');
@@ -355,7 +382,7 @@ async function getModels() {
   selectElement.innerHTML = '';
 
   try {
-    // 3. Fetch data from the API
+    // Fetching can fail for local providers, invalid keys, or unavailable URLs.
     const response = await fetch(url, {
       method: 'GET',
       headers: {
@@ -376,7 +403,7 @@ async function getModels() {
     }
 
 
-    // 4. Batch DOM updates using a DocumentFragment for better performance
+    // Build the options off-screen, then add them to the selector in one step.
     const fragment = document.createDocumentFragment();
 
     for (const model of availableModels.data) {
@@ -405,7 +432,8 @@ function syncmodelselect() {
 
 let opfsroot;
 
-//opfs shit
+// OPFS provides private, browser-managed storage for this origin. Cherenkov
+// keeps every story record in the single "records" directory below the root.
 async function initStorage() {
   const root = await navigator.storage.getDirectory();
   return root;
@@ -424,7 +452,8 @@ async function deleteFile(fileHandle) {
   await fileHandle.remove();
 }
 
-//record shit
+// Record files are named <immutable-id>.json. Virtual moves only update the
+// path fields inside these files; their OPFS filenames never need to change.
 
 async function getRecordDirectory() {
   return await opfsroot.getDirectoryHandle("records", { create: true });
@@ -476,6 +505,7 @@ async function moveRecord(sourcePath, newPath) {
     printTerminal(`Parent path not found: ${parentPath}`);
     return false;
   }
+  // Containers and all descendants receive the same path-prefix replacement.
   for (const item of recordArray.filter(item => item.path === sourcePath || isPathInside(item.path, sourcePath))) {
     item.path = newPath + item.path.slice(sourcePath.length);
     item.parentPath = normalizePath(item.path.substring(0, item.path.lastIndexOf('/')) || '/');
