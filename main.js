@@ -70,63 +70,24 @@ const creativeControlIds = [
   'world-rules-constraints',
   'character-ledger-and-arcs'
 ];
-// The source images are converted once and embedded as compact text. This
-// keeps neofetch local without adding three image assets to the runtime.
-const neofetchAscii = {
-  boykisser: `    ---.                        .--=
-   =.  :-.                    :-:   =
-  =      :-.  :-::::        :-.     .-
- ::        :-  =    .::.  :-.        =
- =           ---+:     .-+.          =
- =         .--:   .      ..          =
- =         .::::::.                  =
- .-                                 -:
-  -.   ::::---:.      =***-:-=.    ::
-   -:  -:  %@@@:      @@@@-  +   .=-.
-*:::=: +   #@@@:      %@@@.  -.  :.:+
- -:.   =.  :@@+ .:.   .++:   :   .-:
-   +..--:                  :=:.  :-
-  -:          .::::::::            =.
- .-::::::.               .:::::::::.
-         .*-:::.         :=
-           :=.            .=
-           =:.             :-`,
-  cherenkov: `###%@@@@@%@@@@@@@@@@%@@%@%%@@@@@%%####
-#***%%%@%@@@@@@@@@@@@@@@@@@@@@%%%%####
-**+*#%%%%#%%%##@%%@@@@@@@%%%%%%%%%####
-+++**#%%%%%%@@%%%%%@%@%%%%%%%%%%#****#
-++++**##%%%%%%%%%%%%%%#%###%%###*+++**
-+++++*###%%%%%#########%#######**+=+**
-+***#################*#########+==+***
-##*****###*#*+***##*++*****###*==+****
-+****++*###**-+=++++==++**###*++++++++
-***+++=-+++++==::=+=.:-==+**++==+===++
-***+++--======:.==+== .:==++---=++++++
-****+=-:----:.::=++==:  ==++=:-=+++++*
-*****+++=--------==--. :==++=:.-++++++
-#*+****++++++++--=-==:..:---::-++++**+
-#*********+++++-=-=++++=----=-+++*****
-##*****++++++++++=+++++++++++++******#
-%##***++=========++++************+**##
-%##**++*+++++==++++++++*####******##%%`,
-  snep: `---===-==-------=----:---=-.: .   ....
-=-=.:-=====*====-........ ..:.-. . .
--==-*%#+=#+=**+*****-:.:-=:===--++-
-=-==*+*=++==*++**+*%%%####========:.
-*=-#***#%-:===+**=#*#%##***=-:=-==.. .
-::+++*=.:=:-==*##+##*#+*+##=*. . .. ..
-.-%+*--=::-=:=++#+=**+@*%+%=++ . ..
-:=%+---:::::--=+#=---+@%%++=%+%--::. .
-:=#+==::::.:::+*=-=-=+%**++**@+-.-+-::
--=#*-+++-:--==+==++@+@%+@+=-#%*+-===:.
- --#@:*+=:::##=%-@@@@++@@==*++++=--:..
--.--*=+++::-%=*=-==+*+*++-+**+-%=..  :
- :+===.:--+:.==++=+*=#*+---+*===+...
-: .+==  :   -++++-===+%=--:-#+-=%=  :=
--:.:=    - .     ...:::--:--:+*=++..:-
-::==-.   .      .  .......::::+=+@#:.:
-:-+===.:--.      .  .. ::...::**#%#=:-
-=+=+==.===:.   .==--..-::.::.::-+#@%:-`
+// Each source photo is sampled into a 64-by-30 character grid. The compact
+// color map keeps 256 representative RGB values without bundling the JPEGs.
+const neofetchArt = {
+  "boykisser": {
+    "width": 64,
+    "text": "         ##.                                             .*%.   \r\n       .+::=-                                          .-=::*   \r\n      =*.   -+=.                                     -+=.   :#. \r\n     ++       -+=.                                .=+-       -# \r\n    =*          -+=      +=-----:.              .=+:          *-\r\n   .#             -+=    #-  ..:--==-.        .++:            .*\r\n   *-               -*-  .#.       .:==-.    =+:               *\r\n  .#                  =+: .#-          :=+:-+-                 =\r\n  -+                   :#+-=+--          .=%:                  -\r\n  =+                 :=-:.                 .=                  -\r\n  =+               .*#=--------=.                              +\r\n  .#                   ......                                  *\r\n   #:                                                         +=\r\n   :#                                                        -# \r\n    =*      ...::::.....              ==+++++---=*--        -#  \r\n     =*     -+#----#@@@@@%-          -@@@@@@%    *=        =+   \r\n      -*.    #:    #@@@@@@:          +@@@@@@%     #      =#+..  \r\n**----:=%=  -*     #@@@@@@:          =@@@@@@#     *-    -+-::=% \r\n.*- ..::::  ++     =@@@@@@           .%@@@@@:     #-        -+. \r\n  ++:       .#.     %@@@@-  ...       .+%%*:      +.      =+-   \r\n   .-==-   ..::      -+=.   -+=:               :: ..    :%-     \r\n      #- .-=*::-                              --#==:     :+-    \r\n     *-     :.           :.  .-=--::-=-         :.         =+   \r\n   .*-     .             :----:..:::..            .::.....::**  \r\n   =+------==-:.                              .:-==-:-----::.   \r\n             .:-=+-::...                  -+*--:.               \r\n                 -#=::----.                 *=                  \r\n                  .=-.                       *=                 \r\n                    :#*                       #-                \r\n                   =+.                         #.               ",
+    "colors": "////////////SUna////////////////////////////////////////////////////////////2m0k2//////////////abba2kpL////////////////////////////////////////////////////////bkpK2tm3b//////////+Sbdv///+2bZLb////////////////////////////////////////////////25Jtktr////aSdv///////9tbf////////+2bZLb///////////////////////////////////////////bkm22/////////7ZJ//////+Sbf////////////+2bZL///////9tkpKSkra2ttv//////////////////9qSbbb/////////////bbb////aSf////////////////+2bZL/////Sbb//9vbtraSkpK22///////////221ttv///////////////9tJ////Sbb///////////////////+Sbbb//9tJ2v/////////btpKSktv////bkm22////////////////////bf//20n//////////////////////9uSbdr/20m229v//////////7aSbba2bbb//////////////////////5L//5Jt/////////////////////////7ZJbbaSbZK2/////////////9uSJbb///////////////////////+2//+Sbf/////////////////////btpKSttv//////////////////////9uS2///////////////////////kv//km3////////////////////bbUmStra2tpKSkpKS2////////////////////////////////////////23//9pJ////////////////////////29vb29vb29v///////////////////////////////////////////9J////Sbb///////////////////////////////////////////////////////////////////////////9tkv///7ZJ//////////////////////////////////////////////////////////////////////////+2Sf//////kkn////////b29va2tra29vb29vb/9v/////////////25KSbW1tbW2SkpKSbZKS2/////////+2Sdv///////+Sbf//////tm1Jtra2tkkAAAAAJCS2/////////////7YAAAAAAAAl/////0mS//////////+Sbf///////////7Zt2/////9Jtv////9JAAAAAAAAtv////////////9tAAAAAAAAJP//////Jdv/////25JJbdvb//9JbbaStra2kiSS//+SSf//////SQAAAAAAALb/////////////kgAAAAAAAEn//////0m2/////5Jtkra2kiXb2m2S/9vattq2tv//bW3//////5IAAAAAACT//////////////9skAAAAAAC2//////9Jtv//////////km3a////bW22/////////9pJ2///////JQAAAAC2///b29vb////////220kJW22////////bdv//////9uSbbb////////bkpKStv//+/b7trb///////+SbZLb////tm2Stv////////////////////b2//v2/////7Ylkv//////////////Sbb/+vLt5Pby8vv///////////////////////////////////////Ly5O3t9v//////tm2S////////////SZL///////b6+/////////////+22tvb2raSkra2traSkv////////////b6////////////km3////////aSbb/////29v/////////////////tpKSkpK229vatrba2////////////////9u2ttrb29va2tpJSf//////km22kpKSkpKSkpK22///////////////////////////////////////29u2tpKStra2tra2tra229v//////////9v////////btpKSbZK2ttrb29vb/////////////////////5JtSba2ttr//////////////////////////////////////////5Ilkra2tpKSktv//////////////////////22S////////////////////////////////////////////////25KS2v//////////////////////////////bZL/////////////////////////////////////////////////tklt2/////////////////////////////9Jtv//////////////////////////////////////////////km3b/////////////////////////////////0nb////////////////////"
+  },
+  "cherenkov": {
+    "width": 64,
+    "text": "######%%%%%%%#%##%%%%%%%%%%%%%%%%%#%%%%%#%%**%%%%%%%%%%%%#######\r\n#*#####%%##%%#%%##%%%%%%%%%%%%%%#####%%%#%###%##%%%%###########*\r\n#*###**#%%##%##%%%%%%%%%%%%%%%%%%%#%%%%%%%#%%%%%%%%%%%##########\r\n********####%%##%%%%%%###%%%%%%%%%%%%%%%%%%#%%%%%%%#############\r\n********#####%#######%####%%%#%%%%%%%%%%%%%#%##################*\r\n*******#######%###########%####%%%%%%%%#####################*##*\r\n*********########%###%%%%#%#####%##%%%##################******#*\r\n*+********############%%%%##############################********\r\n*+*********##########################################***********\r\n*+********########################################*##****+++****\r\n*+********############################################***++*****\r\n*+**#############*###################################*++++******\r\n#*######*****####**###*****#######********##*######**++++*******\r\n************#########*+*******************#########***++********\r\n*************#######**=+**********+++*****########****+*********\r\n************++********++*++++****+==+++***+*****#********+++***+\r\n**********+++=+********+++=-=+***+====+++*+******+++++**++++****\r\n**********++++++*******++===++**++*+--==+*+*****++++++**********\r\n***********===++*++++++++==+*****+*++===++++***++==+++**********\r\n*********+++==++++++++=====++*****++=--:=+++****+==+++**********\r\n*************++==+===-=--+++++++++++=====+*******++=++**********\r\n***************++*++++++++++++++++++=--=+++*****++=--+**********\r\n#*************************++++++++++=:-==+++++++++==+**********+\r\n###***********************+++++++**+*++==-===+=+==++************\r\n#************************+++++++********+=++=+=++++*************\r\n#************************++++++*********************************\r\n######*******++++************+********************************##\r\n########********++++****++++*********************************###\r\n#####**********+++**+++++++++++****************************#####\r\n#####****+******++++++++++*+***++++++++*******************######",
+    "colors": "CgoKCgoKBgYGBgYGBgoGCgoGBgYGBgYGBgYGBgYGBgYGCgoGBgYGBgoGBg4OBgYGBgYGBgYKBgYGCgoKCgoKCgoOCgoKCgoKBgoKBgYKBgYKCgYGBgYGBgYGBgYKBgYGCgoKCgoGBgYKBgoKCgYKCgYGBgoKCgoKCgoKCgoKCgoKDgoKCg4OCgYGCgoGCgoGBgYGBgYGBgYGBgYGBgYGBgYKCgYGBgYGBgYKBgYGBgYGBgYKCgYKCgoKCgoKCgoKCg4ODg4ODg4KCgoKCgYKCgYKCgYGBgoKCgYGBgYGBgYGBgYGBgYGBgYGCgoKCgoKBgYKCgoKCgoKCgoKCgoKCg4ODg4ODg4OCgoKCgoGCgoKCgoKCgoKCgoKBgoKCgYGBgYGBgYGBgYGBgYKCgoKCgoKCgoKCgoKCgoKCgoKCg4ODg4ODg4OCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgYGBgYGBgYKCgoKCgoKCgoKCgoKCgoKCgoKCgoOCgoODg4ODg4ODg4OCgoKCgoKCgoGCgoKBgYGCgoKCgoKCgoKCgoKCgYKCgoKCgoKCgoKCgoKCgoKCgoODg4ODg4KDg4ODg4ODg4ODg4KCgoKCgoKCgoKCgoGCgYGCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKDg4ODg4ODg4ODg4ODg4ODg4ODgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCg4ODg4ODg4ODg4ODg4ODg4ODg4ODgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoOCgoODg4ODhISDg4ODg4ODg4ODg4ODg4KCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCg4ODg4SDg4ODg4OEg4OCgoKCgoKCgoKCgoKCg4KCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCg4SEhIODg4ODg4OCg4KCgoKCgoODg4ODgoKCgoODgoKCg4ODg4OCgoKCgoKCg4ODg4ODg4OCgoOCgoKCgoKDg4SEhISDg4ODg4ODg4OCg4ODg4ODg4ODgoKCgoKCgoKCg4SDg4ODg4ODg4ODg4ODg4ODg4ODgoKCgoKCgoKCg4ODhIODg4ODg4ODg4ODg4ODg4ODg4ODg4OCgoKCgoKCg4OMhIODg4ODg4ODg4OEg4ODg4ODg4KCgoKCgoKCg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4OEhIODg4ODg4ODhIODg4SEhIODg4OEhMSEhIODg4ODg4ODg4OCg4ODg4ODg4OEhIODg4ODg4ODg4ODg4ODg4SEhIXEg4ODg4ODg4OEhISEjcXEg4ODhI3Nxc3EhIODhIODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4OEhISEg4SDg4ODg4ODhISNzc3EhIODhISDhJXVzcXEg4SDg4ODg4SEhISEhIODg4ODg4ODg4ODg4ODg4ODg4ODg4SNxISEg4SDhISEhISEjc3Eg4ODg4ODg4SEhIXFxISEhIODg4SEjcTEhIODg4ODg4ODg4ODg4ODg4ODg4ODg4SMjcXEhISEhISEhIXNxcyEhIODg4ODg4OEhI3V3s3Eg4SDg4ODg43EhISDg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4OEhISNxIXMjc3F1c3EhISEhIODg4SEhI3Nzc3Mg4ODg4ODg4OEhISEhIODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4OEhISEhIOEhISEhISEhISEhISN1c3NxISDg4ODg4ODhI3N1cSDg4ODg4ODg4ODgoODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4OEhISEhISEhISEjJ7VzcXEhISEhISEhISEjcSDg4ODg4ODg4ODhIKCgoODg4ODg4ODg4ODg4ODg4ODg4ODg4ODhISEhISEg4ODg4ODhI3Ejc3EjcSFxI3NxIODg4ODg4ODg4ODg4OCg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4SEhISEhIODg4ODg4ODhIyEhI3EjISDhISDg4ODg4ODg4ODg4ODgoODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4SEg4OEhIODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4KCgoKCgoKDg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODgoKCgoKCgoKCgoODg4ODg4ODhISDg4ODg4ODg4SEg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODgoKCgoKCgoKDg4ODg4ODg4ODg4ODg4ODhIOEhIODhISEg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4OCgoKCgoKCgoKCg4ODg4ODg4ODg4ODg4SDg4SEhISEg4ODg4ODhISEhISEhIODg4OCgoODg4ODg4ODg4ODg4OCgoKCgoK"
+  },
+  "snep": {
+    "width": 64,
+    "text": "--===-==========-------==-===:.::::-------++-..:.         ..    \r\n=-----::-=--------=--------=:.........::..::.  . ..             \r\n+===-:.==++++**+++##+=====--...  ..::.:..   ......:--:..        \r\n--==--=**#*##*++++*###**++++==---:::..:::---::----:--==-:..     \r\n-:====*##*+#*+*+++=+#****++***###*##*=---==--:-+==-----=--:.  . \r\n=-==-=*#*#*+=+++++++*++++*++++*##*%%%####+++=-=====-=====--.  . \r\n====:+#**#+=++-=---+*++++***=+*#*#%%%#%%#****+--====-====-..  . \r\n==++=**#**+*+*+::-++===++*##*+***#%%%##%%##*+#+=:.-=--=+=: .... \r\n:-+****#**=---+---=-===***##*+#**%*###****#****+-  ....::...... \r\n..:+#**++*+=-:::::-====+*+*****++*###*##**++*++#*:  .   ... ..  \r\n..=##**+=--==:-::-==--=+****+++***#**%##%%*#*=+**+: .. ..... .  \r\n .+##+--=---------::=++*=+##====++*####%###++++%%+*=:::::... .. \r\n.:+##+-:--:::::::::---:-++*#=-----=**%%#%%++*++**+#*===---:.....\r\n..+##*+==-:::::::.:::.:==**+=-==-=#**#**%%++****%#+*=:::-==::---\r\n+=+#%++*==-----:::.::.-==+#*=====#*#@@#+**+=++*++++#+:::-==::-==\r\n++=*#*+---++=--:-----===*+=++*++*#+#%#+#@***===**++##=======-...\r\n..:=*#*+--+**=::::-=+++==*++#@@@#**+=+#***+===+**#++#*--==-=:   \r\n.:--+*#*--++++-::::-*+*==*+=#@@@@%%++%%#%*-==*%++*++*#+---:: .::\r\n-:..-=====++++--:::-%*--*+*+++++##+++***%+==+*%*+==+%%=.....  :-\r\n-..-=------=+++=--:-++=+#*++=--=+****###+===+=**===-#%=..      .\r\n..:=======-.:---==--:-+#**+===+*****#**+====-=**=====**:......  \r\n  .=+====+- ......::-+*++*++++*+++*+***==-:--:=#+==-=#@+.  .:::.\r\n:  .-+===:   .::.  ..-=+++===-=-==-=##+==--:---*#+=-+#@%=  ..:==\r\n-:..:-==:     .-:...   .::..:...::::----------:=#*++*##%*: ..:=-\r\n-.:---:-.    ....           ...  .......:::--:::-*++===+%#:::.::\r\n-::===--:.     .           ..   .... ......:::...=*+=+*%@%=:..:-\r\n----====+-   .:-:               ....  .......::.::**+*#%@@#::---\r\n---=+==++=:--===-           ...   .....:::.....:::=+++****#=--=-\r\n===+====+=:-++++-...     .---==-:......::::::::::::-===+#%@#=---\r\n=-:.-===:.  .:--:  -.     -+==-=:...-::::..::.....:::-==#%%%*:::",
+    "colors": "srGxsbGxsbKRkbGxsbGRsbKysrKysrKysrKRkZHa2ra21ra2traStraSjY2y2tu22/v/+///////29vb+/v//5G2srKyttbWsrGxsrKysra2trKytraysrKysrG229vb29vb29vb27bb27a22vv72//b2/////////////////+NkZGxsrbakpFtbW1tbW1tbW1JRI2RkbGxsbK229vb+9vb2tq22tra29v/+9vb29rb27a2trbb2/////vb29v/srKRsbK2kW1JSWlJSWmNbW2NaURJSUltbW1tbZKSsra2tra229vWtra2tra2trK2tra2trKSkrK22tv//9vb/7K2srGxkUlJSWltSW2NbW2NjZGNSWltSW1tbW1tSUlJSUlJSUmSkpKykpK2traSjY2xsra2kraStra229vb2/+RsrGRspFJSWlJaW2RjW2NjY2NjW2NjW1tbW2NjY1JSUlJJSQkSUlJSW1tbZKykpKRkbGykpKxkZK2ttv729v/kbGRsrZtSWlpSW2RjY2ysba2sY1tjY2NbWlpaZFtaUltSSQkJSUkJUlJaWlpjZKSkrKSkpKSjZGRstra2/vb/5GRjY2SSUlJbWmNbY1tjbbWto2NsZGRbW1pSUltjUlJbUklJCVJSSUlSUlpbUltkrbatpK2tpKNkbbb29vb2/+2tm1JSWltSUlpkra2ko2ytrKxtpGRkW1tbUlJSY1JaUklSUlJSUlJbW1JaWlpbW22+/va2tvattrb29va29v729u2bUVpbW2NaW2RttbWtta2srGRkZFtaW1JbW1tbW1tSUlJSW1JSW1tbW1tbY1Jbbb/+9v7+/vb29v729v7/9vbkklJbWltkbGxsbHWtta2trGRtrKRbW1paWmNbW1tbUlJSW0lSSUkJW1JaY2NSUmNtvvb29vb29vb29vb+//b225JSY2ysrGytra2trK2trbWtpGNjW2RbUlJkZGxkY1tbSVJSSUlSSVEjW1tjSQkbW2Stra22tba29v729v/27ZuSUmNsra2trbW1ta21tbW1ra2tra2bW1pRJGysbaytpFJbSQkSSQkbY1pbY1tbW1JSZGSkra2srba29ra29vbbklEaY2RsrbW1ta2ttba2trW1tq2kZFtaW2RspGSkpFJaW1JSW0lJG1tbW1tbSRJbUmStra2tpGRtra2trZtkW5JRG2NbZGRsra2trbWttba2tbatpGNbUltkZGRkZFJSUkAAEltaW1tkY1tbW1tbW1Jbba2trKRkba2tpKRbW2SaUlpjbG2sm5tkra2tra2sra2kY2RbW2RbY1tbW1JSW1JJEltSSRJbW2RkZFpaW1tSUmRsZGRsbGRstva2trbtpFpSWmNtrZtbW2Stra2traSbW2NkZFtjW1JAAAkSW1JbZFtSUlJSY2RkZFtSUlJbW1JabKykZGyktb////a1rK2jWlpbbaybW1tbra2tra2tkltaY2RaY2SSQAAAAAkJW1tJSRJJGmysZFpJW2NbW2NSUWNsrK2ttrb27a2sdbb2rKRkZGxkm1tbW6Stra2trIlabGxaW1pbW1tjW1JSW1tbUltSSRtkpFtSSVJbZGSjSQlktvb29vb29vWtrba2rKxsrK2srayjW1tbpKStra2bW2xbUltjY2RsbKRbW1JSUlJSUltkZKSbZJtSZGSkpJJJJLb29v/////+9vb2raSkZGxsbGRttrWtrKykpKSttu2jUltaW2RkZGNbUltaWlJSUltkpKSkraSSUmSkpKRkWlJttra29ra2/v/+//bko2RsbGxjbbb29rb29va1raSjW2NbW1tjY1tbY2NbW1tbWltkZKStpKStpJJbZKSkpFJJG3b29vatra22rb/+9uyjZGRkbb//9vb2trb//vb2raRbY2NkZKStpK2kZKykUlJbpKSsra2traSSUltkpKRSSQkkv/7+9u2kZGy2trbtrKNkdb////7/9uy1tvb29v//9rW1trattvb27a2tra2tra2tra2kra2tpJJbW1tbUlFJUna+9va1pK2ttq2trGytrLa/////9vb29v/////////////+9vb29vb29vb29vb27e2tra2tre3kkltbZKSkW0kSdba1tq2trbWtpGRkbK2ttv/////29vb/////////////9vb+9vb29vb29vb29vb29u3t7fb29uSbW2SbUkkACSR1tra1rK2traykZGRkY222/v729a21v////////////v7+////9vb29v/+9vb29vb29u7t9vbtm1tbW1JJAAASbbWtra2srK2kY2RkY2Nkba2spKRkbb7+//////////7+9vb29v7+9vb29vbtrbW29vb29u2treSbW1tbUlJSUmRtrKRspGxkY2RkZGRjZHWso2NjY2229vb///////btrKykZGyttrb29rb2ra2ttbWtrbW1ra2traSkpFtSSQARZG2srKRtrbaspGRkrbb///btrKy2v//str//////7aNsbGxkdra29q2tta21tvb1tbb29vb29u3t7aSkkklJCRJtra2"
+  }
 };
 const terminalColors = {
   cyan: '#71d0ff',
@@ -406,8 +367,8 @@ function setTerminalColor(name, announce = true) {
 // samples made with the endpoint and model that are selected right now.
 async function showNeofetch(requestedName) {
   const name = requestedName.toLowerCase().replace(/\.(jpg|jpeg|png)$/, '');
-  if (!neofetchAscii[name]) {
-    printTerminal(`Unknown ASCII variant: ${requestedName}\nAvailable: ${Object.keys(neofetchAscii).join(', ')}`, 'error');
+  if (!neofetchArt[name]) {
+    printTerminal(`Unknown ASCII variant: ${requestedName}\nAvailable: ${Object.keys(neofetchArt).join(', ')}`, 'error');
     return;
   }
 
@@ -452,7 +413,8 @@ function renderNeofetch(name, rows) {
   wrapper.className = 'neofetch-output';
   const art = document.createElement('pre');
   art.className = `neofetch-ascii ${name}`;
-  art.textContent = neofetchAscii[name];
+  art.setAttribute('aria-label', `${name} photo rendered as colored ASCII art`);
+  renderColoredAscii(art, neofetchArt[name]);
   const info = document.createElement('div');
   info.className = 'neofetch-info';
   const title = document.createElement('div');
@@ -474,6 +436,35 @@ function renderNeofetch(name, rows) {
   wrapper.append(art, info);
   terminalOutput.appendChild(wrapper);
   terminalOutput.scrollTop = terminalOutput.scrollHeight;
+}
+
+// Adjacent characters with the same sampled color share one span. This keeps
+// the higher-resolution art much lighter than creating one element per cell.
+function renderColoredAscii(element, art) {
+  const colors = Uint8Array.from(atob(art.colors), character => character.charCodeAt(0));
+  const lines = art.text.split(/\r?\n/);
+  for (const [row, line] of lines.entries()) {
+    for (let start = 0; start < line.length;) {
+      const color = colors[row * art.width + start];
+      let end = start + 1;
+      while (end < line.length && colors[row * art.width + end] === color) end++;
+      const run = document.createElement('span');
+      run.style.color = unpackPhotoColor(color);
+      run.textContent = line.slice(start, end);
+      element.appendChild(run);
+      start = end;
+    }
+    if (row < lines.length - 1) element.append('\n');
+  }
+}
+
+// The packed byte uses three bits each for red and green and two for blue.
+// Expanding those channels here restores the sampled photo palette.
+function unpackPhotoColor(color) {
+  const red = Math.round((color >> 5) * 255 / 7);
+  const green = Math.round(((color >> 2) & 7) * 255 / 7);
+  const blue = Math.round((color & 3) * 255 / 3);
+  return `rgb(${red} ${green} ${blue})`;
 }
 
 function median(values) {

@@ -488,30 +488,9 @@ textarea::placeholder {
   margin: 0;
   color: var(--terminal-color);
   font: inherit;
+  font-size: clamp(0.9rem, 1.25vw, 1.1rem);
   line-height: 1;
   white-space: pre;
-}
-
-/* Gradient text gives each image its own palette. The @supports wrapper
-   leaves a readable solid-color fallback in older browsers. */
-@supports ((background-clip: text) or (-webkit-background-clip: text)) {
-  .neofetch-ascii {
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
-  }
-}
-
-.neofetch-ascii.boykisser {
-  background-image: linear-gradient(145deg, #ffffff 20%, #d9eaff 62%, #ff6179 100%);
-}
-
-.neofetch-ascii.cherenkov {
-  background-image: linear-gradient(145deg, #9af2ff, #078de8 55%, #2448d8);
-}
-
-.neofetch-ascii.snep {
-  background-image: linear-gradient(145deg, #fff4d4, #c8b48d 55%, #8794a6);
 }
 
 .neofetch-info {
