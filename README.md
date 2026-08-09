@@ -1,8 +1,8 @@
 # Cherenkov
 
-Cherenkov is a framework-free, browser-based story generator controlled through a small shell. The application remains four runtime files: `index.html`, `styles.css`, `main.js`, and `Jua-Regular.ttf`. This README is documentation only.
+Cherenkov is a framework-free, browser-based story generator controlled through a small shell. Its runtime files are `index.html`, `styles.css`, `main.js`, `Jua-Regular.ttf`, and `VT323-Regular.ttf`. This README is documentation only.
 
-The workspace responds from wide desktop layouts down to narrow phone screens. The editor remains the primary surface, creative controls feed directly into scene prompts, and the combined terminal uses VT323 from Google Fonts with a monospace fallback.
+The workspace responds from wide desktop layouts down to narrow phone screens. The editor remains the primary surface, creative controls feed directly into scene prompts, and the combined terminal uses the bundled `VT323-Regular.ttf` font with a monospace fallback.
 
 Serve the directory over localhost so the browser can use Origin Private File System (OPFS):
 

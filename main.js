@@ -2,14 +2,14 @@
 // Configuration is loaded first, then OPFS records are loaded, and finally
 // the terminal listener is attached so commands always have storage ready.
 async function init() {
-    saveConfigButton.addEventListener('click', saveconfig);
+    saveConfigButton.addEventListener('click', saveConfig);
     getModelsButton.addEventListener('click', getModels);
-    availableModelsSelect.addEventListener('change', syncmodelselect);
+    availableModelsSelect.addEventListener('change', syncModelSelect);
     setupCreativeControls();
-    loadconfig();
+    loadConfig();
     refreshCreativeControls();
     await getModels();
-    await initStorage().then(root => opfsroot = root);
+    opfsRoot = await navigator.storage.getDirectory();
     recordDirectory = await getRecordDirectory();
     await refreshRecords();
     renderUiState();
@@ -28,7 +28,7 @@ async function init() {
         commandInput.disabled = true;
         setTerminalState('working');
         try {
-          await tokenizecommand(command);
+          await tokenizeCommand(command);
         } catch (error) {
           console.error('Command failed:', error);
           printTerminal(`Error: ${error.message}`);
@@ -50,6 +50,13 @@ const editorTitleElement = document.getElementById("editor-title");
 const saveStatusElement = document.getElementById("save-status");
 const terminalStateElement = document.getElementById("terminal-state");
 const resetCreativeControlsButton = document.getElementById("reset-creative-controls");
+const endpointInput = document.getElementById("openai-endpoint");
+const apiKeyInput = document.getElementById("openai-api-key");
+const modelInput = document.getElementById("openai-model");
+const systemPromptInput = document.getElementById("system-prompt");
+const availableModelsSelect = document.getElementById("available-models");
+const saveConfigButton = document.getElementById("save-config-button");
+const getModelsButton = document.getElementById("get-models-button");
 const creativeControlIds = [
   'length',
   'pacing',
@@ -63,7 +70,7 @@ const creativeControlIds = [
 ];
 
 // These values are shared by every terminal command. In particular,
-// currentPath must live outside executecommand() so it survives between
+// currentPath must live outside executeCommand() so it survives between
 // commands in the same way a shell's working directory does.
 let recordDirectory;
 let recordArray = [];
@@ -73,7 +80,7 @@ let currentRecord = null;
 
 // Turn raw terminal text into one small command object. Flags are kept
 // separate from positional arguments, and quoted values remain one argument.
-async function tokenizecommand(command) {
+async function tokenizeCommand(command) {
   if (command === '') {
     return null;
   }
@@ -85,7 +92,7 @@ async function tokenizecommand(command) {
     else if (/^-[^-]+$/.test(part)) flags.push(...part.slice(1).split('').map(flag => '-' + flag));
     else args.push(part);
   }
-  return executecommand({
+  return executeCommand({
     cmd: parts[0].toLowerCase(),
     flags,
     args
@@ -94,7 +101,7 @@ async function tokenizecommand(command) {
 
 // Dispatch one parsed command. Each branch returns after it finishes so the
 // handlers stay independent instead of accidentally nesting inside each other.
-async function executecommand({ cmd, flags, args }) {
+async function executeCommand({ cmd, flags, args }) {
   const [inputdir, outputdir] = args;
 
   // A destination can be one scene or any container above it. Generation is
@@ -121,7 +128,7 @@ async function executecommand({ cmd, flags, args }) {
     }
     for (const [index, record] of scenes.entries()) {
       printTerminal(`Generating ${index + 1}/${scenes.length}: ${record.path}`);
-      const content = await openaigen(resolveSceneContext(record));
+      const content = await openaiGen(resolveSceneContext(record));
       if (content === null) {
         printTerminal(`Generation failed: ${record.path}`);
         return;
@@ -308,6 +315,7 @@ function updateSlider(slider) {
   const output = document.querySelector(`[data-value-for="${slider.id}"]`);
   if (output) output.textContent = `${slider.value}%`;
   slider.style.setProperty('--value', `${slider.value}%`);
+  slider.style.setProperty('--slider-color', `hsl(${195 + Number(slider.value) * 1.25} 100% 62%)`);
 }
 
 function refreshCreativeControls() {
@@ -328,7 +336,7 @@ function readCreativeControls() {
 }
 
 // Long and short flag names are accepted by the same command branches.
-// tokenizecommand() expands a combined flag such as -rf into -r and -f.
+// tokenizeCommand() expands a combined flag such as -rf into -r and -f.
 function hasFlag(flags, ...names) {
   return names.some(name => flags.includes(name));
 }
@@ -459,76 +467,65 @@ async function createRecord(path, requestedType) {
 
 // Send one OpenAI-compatible chat-completions request for one scene. The
 // system prompt and inherited story context are separate message roles.
-async function openaigen(currentcontext) {
-  const endpoint = document.getElementById("openai-endpoint").value.replace(/\/$/, '');
-  const apikey = document.getElementById("openai-api-key").value;
-  const model = document.getElementById("openai-model").value;
-  const systemprompt = document.getElementById("system-prompt").value;
-  try { 
-        const response = await fetch(endpoint + "/chat/completions", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${apikey}`
-            },
-            body: JSON.stringify({
-              "model": model,
-              "messages": [
-                {"role": "system", "content": systemprompt},
-                {"role": "user", "content": currentcontext}
-              ]
-            })
-        }); 
-        const output = await response.json();
-        if (!response.ok || output?.error) throw new Error(output?.error?.message || `HTTP ${response.status}`);
-        const content = output?.choices?.[0]?.message?.content;
-        if (typeof content !== 'string' || !content.trim()) throw new Error('API response missing content.');
-        return content;
-    }
-    catch (error) {
-      console.error('Generation failed:', error);
-      return null;
-    }
+async function openaiGen(context) {
+  try {
+    const response = await fetch(`${endpointInput.value.replace(/\/$/, '')}/chat/completions`, {
+      method: 'POST',
+      headers: apiHeaders(),
+      body: JSON.stringify({
+        model: modelInput.value,
+        messages: [
+          { role: 'system', content: systemPromptInput.value },
+          { role: 'user', content: context }
+        ]
+      })
+    });
+    const output = await response.json();
+    if (!response.ok || output?.error) throw new Error(output?.error?.message || `HTTP ${response.status}`);
+    const content = output?.choices?.[0]?.message?.content;
+    if (typeof content !== 'string' || !content.trim()) throw new Error('API response missing content.');
+    return content;
+  } catch (error) {
+    console.error('Generation failed:', error);
+    return null;
+  }
 }
-    
 
-
+function apiHeaders() {
+  return {
+    'Content-Type': 'application/json',
+    ...(apiKeyInput.value && { Authorization: `Bearer ${apiKeyInput.value}` })
+  };
+}
 
 // Store the small provider configuration in localStorage. Story records stay
 // in OPFS and are never mixed into this configuration object.
-function loadconfig() {
+function loadConfig() {
   try {
-        const config = JSON.parse(localStorage.getItem("config"));
-        if (config === null) {
-            return;
-        }
-        document.getElementById("openai-endpoint").value = config.endpoint || "https://nothing.here:8080/v1";
-        document.getElementById("openai-api-key").value = config.apiKey || "";
-        document.getElementById("openai-model").value = config.model || "example model";
-        document.getElementById("system-prompt").value = config.systemPrompt || "";
-        for (const [id, value] of Object.entries(config.creativeControls || {})) {
-          const control = document.getElementById(id);
-          if (control) control.value = value;
-        }
+    const config = JSON.parse(localStorage.getItem('config')) || {};
+    endpointInput.value = config.endpoint || '';
+    apiKeyInput.value = config.apiKey || '';
+    modelInput.value = config.model || '';
+    systemPromptInput.value = config.systemPrompt || '';
+    for (const [id, value] of Object.entries(config.creativeControls || {})) {
+      const control = document.getElementById(id);
+      if (control) control.value = value;
+    }
   } catch (error) {
-      console.error('Failed to load config:', error);
+    console.error('Failed to load config:', error);
   }
 }
-function saveconfig() {
-    const config = {
-        endpoint: document.getElementById("openai-endpoint").value,
-        apiKey: document.getElementById("openai-api-key").value,
-        model: document.getElementById("openai-model").value,
-        systemPrompt: document.getElementById("system-prompt").value,
-        creativeControls: readCreativeControls()
-    };
-    localStorage.setItem("config", JSON.stringify(config));
-    setTerminalState('configuration saved');
+
+function saveConfig() {
+  localStorage.setItem('config', JSON.stringify({
+    endpoint: endpointInput.value,
+    apiKey: apiKeyInput.value,
+    model: modelInput.value,
+    systemPrompt: systemPromptInput.value,
+    creativeControls: readCreativeControls()
+  }));
+  setTerminalState('configuration saved');
 }
-// These controls are present in index.html and are reused during startup.
-const saveConfigButton = document.getElementById("save-config-button");
-const getModelsButton = document.getElementById("get-models-button");
-const availableModelsSelect = document.getElementById("available-models");
 
 init();
 
@@ -536,129 +533,54 @@ init();
 // Fetch the model list from an OpenAI-compatible /models endpoint and replace
 // the selector options with the IDs returned by the provider.
 async function getModels() {
-  // Read and validate the three controls needed for this request.
-  const endpointInput = document.getElementById('openai-endpoint');
-  const apiKeyInput = document.getElementById('openai-api-key');
-  const selectElement = document.getElementById('available-models');
-
-  if (!endpointInput || !apiKeyInput || !selectElement) {
-    console.error('Required DOM elements are missing.');
-    return;
-  }
-
-  if(apiKeyInput.value==null || apiKeyInput.value==undefined || apiKeyInput.value==""){
-    console.debug('API key is missing.');
-    apiKeyInput.value = "";
-  }
-
   if (!endpointInput.value) return;
-
-  const url = `${endpointInput.value.replace(/\/$/, '')}/models`;
-  selectElement.innerHTML = '';
-
   try {
-    // Fetching can fail for local providers, invalid keys, or unavailable URLs.
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKeyInput.value}`
-      }
-    });
-
-    const availableModels = await response.json();
-
-    if (!response.ok) {
-      console.error('Failed to fetch models');
-      return;
-    }
-
-    if (!Array.isArray(availableModels?.data)) {
-      throw new Error('Invalid API response format: "data" property missing.');
-    }
-
-
-    // Build the options off-screen, then add them to the selector in one step.
-    const fragment = document.createDocumentFragment();
-
-    for (const model of availableModels.data) {
-      if (model.id) {
-        const option = document.createElement('option');
-        option.value = model.id;
-        option.textContent = model.id;
-        fragment.appendChild(option);
-      }
-    }
-
-    selectElement.appendChild(fragment);
-
+    const response = await fetch(`${endpointInput.value.replace(/\/$/, '')}/models`, { headers: apiHeaders() });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result?.error?.message || `HTTP ${response.status}`);
+    if (!Array.isArray(result?.data)) throw new Error('Model response is missing data.');
+    availableModelsSelect.replaceChildren(
+      new Option('available models', ''),
+      ...result.data.filter(model => model.id).map(model => new Option(model.id, model.id))
+    );
+    setTerminalState(`${result.data.length} model${result.data.length === 1 ? '' : 's'}`);
   } catch (error) {
-    console.error('Failed to fetch or populate models:', error);
-    }
-}
-
-function syncmodelselect() {
-  const modelSelect = document.getElementById('available-models');
-  const modelInput = document.getElementById('openai-model');
-  if (modelSelect !== null && modelInput) {
-    modelInput.value = modelSelect.value;
+    console.error('Failed to fetch models:', error);
   }
 }
 
-let opfsroot;
+function syncModelSelect() {
+  modelInput.value = availableModelsSelect.value;
+}
+
+let opfsRoot;
 
 // OPFS provides private, browser-managed storage for this origin. Cherenkov
 // keeps every story record in the single "records" directory below the root.
-async function initStorage() {
-  const root = await navigator.storage.getDirectory();
-  return root;
-}
 async function readJson(fileHandle) {
-  const file = await fileHandle.getFile();
-  const contents = await file.text();
-  return JSON.parse(contents);
+  return JSON.parse(await (await fileHandle.getFile()).text());
 }
+
 async function writeJson(fileHandle, data) {
   const writable = await fileHandle.createWritable();
   await writable.write(JSON.stringify(data, null, 2));
   await writable.close();
 }
-async function deleteFile(fileHandle) {
-  await fileHandle.remove();
-}
 
 // Record files are named <immutable-id>.json. Virtual moves only update the
 // path fields inside these files; their OPFS filenames never need to change.
-
-async function getRecordDirectory() {
-  return await opfsroot.getDirectoryHandle("records", { create: true });
+function getRecordDirectory() {
+  return opfsRoot.getDirectoryHandle('records', { create: true });
 }
-async function getRecordHandle(recordsDirectory, id, writeifnotfound) {
-  if (writeifnotfound === true) {
-    return await recordsDirectory.getFileHandle(id + ".json", { create: true });
-  } else {
-    return await recordsDirectory.getFileHandle(id + ".json");
-  }
+
+function getRecordHandle(recordsDirectory, id, create = false) {
+  return recordsDirectory.getFileHandle(`${id}.json`, { create });
 }
 
 async function saveRecord(recordsDirectory, record) {
   if (!record) throw new TypeError('A record is required.');
   record.id ||= crypto.randomUUID();
   await writeJson(await getRecordHandle(recordsDirectory, record.id, true), record);
-}
-
-
-
-async function loadRecord(recordsDirectory, id) {
-  try {  
-    const fileHandle = await getRecordHandle(recordsDirectory, id);
-    return await readJson(fileHandle);
-  } catch (error) {
-    if (error.name === 'NotFoundError') {
-      return null;
-    }
-    throw error;
-  }
 }
 
 async function moveRecord(sourcePath, newPath, force) {
@@ -709,31 +631,21 @@ async function moveRecord(sourcePath, newPath, force) {
 async function loadAllRecords(recordsDirectory) {
   const records = [];
   for await (const handle of recordsDirectory.values()) {
-    if (handle.kind !== 'file') {
-      continue;
-    }
-    if (!handle.name.endsWith('.json')) {
-      continue;
-    }
+    if (handle.kind !== 'file' || !handle.name.endsWith('.json')) continue;
     try {
       records.push(await readJson(handle));
     } catch (error) {
       console.error(`Failed to read record from ${handle.name}:`, error);
-    }  
+    }
   }
-
   return records;
 }
 
 async function deleteRecord(recordsDirectory, id) {
   try {
-    const fileHandle = await getRecordHandle(recordsDirectory, id);
-    await deleteFile(fileHandle);
+    await (await getRecordHandle(recordsDirectory, id)).remove();
   } catch (error) {
-    if (error.name === 'NotFoundError') {
-      return;
-    }
-    throw error;
+    if (error.name !== 'NotFoundError') throw error;
   }
 }
 
