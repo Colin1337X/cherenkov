@@ -54,15 +54,15 @@
 
                         <div class="range-grid">
                             <label class="range-control" for="length">
-                                <span>length <output data-value-for="length">55%</output></span>
+                                <span>length <output data-value-for="length">1.05×</output></span>
                                 <input type="range" class="slider" id="length" min="0" max="100" value="55" data-default="55">
                             </label>
                             <label class="range-control" for="pacing">
-                                <span>pacing <output data-value-for="pacing">50%</output></span>
+                                <span>pacing <output data-value-for="pacing">1.00×</output></span>
                                 <input type="range" class="slider" id="pacing" min="0" max="100" value="50" data-default="50">
                             </label>
                             <label class="range-control" for="chaos">
-                                <span>chaos <output data-value-for="chaos">35%</output></span>
+                                <span>chaos <output data-value-for="chaos">0.85×</output></span>
                                 <input type="range" class="slider" id="chaos" min="0" max="100" value="35" data-default="35">
                             </label>
                             <label class="range-control" for="dialogue-share">
@@ -70,7 +70,7 @@
                                 <input type="range" class="slider" id="dialogue-share" min="0" max="100" value="40" data-default="40">
                             </label>
                             <label class="range-control" for="tension">
-                                <span>tension <output data-value-for="tension">60%</output></span>
+                                <span>tension <output data-value-for="tension">1.10×</output></span>
                                 <input type="range" class="slider" id="tension" min="0" max="100" value="60" data-default="60">
                             </label>
                         </div>
@@ -84,8 +84,16 @@
                     </section>
 
                     <details class="panel config-panel" id="config-box">
-                        <summary>connection settings</summary>
+                        <summary>generation settings</summary>
                         <div class="config-fields">
+                            <p class="settings-label">base generation parameters</p>
+                            <div class="generation-base-grid">
+                                <label>max tokens<input type="number" class="input-field" id="base-max-tokens" min="1" step="1" value="2048"></label>
+                                <label>temperature<input type="number" class="input-field" id="base-temperature" min="0" max="2" step="0.01" value="0.8"></label>
+                                <label>top-p<input type="number" class="input-field" id="base-top-p" min="0.01" max="1" step="0.01" value="0.9"></label>
+                                <label>presence penalty<input type="number" class="input-field" id="base-presence-penalty" min="-2" max="2" step="0.01" value="0.4"></label>
+                            </div>
+                            <p class="settings-label">provider</p>
                             <label>system prompt<textarea class="text-area-small" placeholder="system prompt" id="system-prompt"></textarea></label>
                             <label>endpoint<input type="text" class="input-field" placeholder="http://localhost:8080/v1" id="openai-endpoint"></label>
                             <label>API key<input type="password" class="input-field" placeholder="optional for local models" id="openai-api-key"></label>

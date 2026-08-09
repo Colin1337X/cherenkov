@@ -59,6 +59,24 @@ const systemPromptInput = document.getElementById("system-prompt");
 const availableModelsSelect = document.getElementById("available-models");
 const saveConfigButton = document.getElementById("save-config-button");
 const getModelsButton = document.getElementById("get-models-button");
+const generationBaseDefaults = {
+  max_tokens: 2048,
+  temperature: 0.8,
+  top_p: 0.9,
+  presence_penalty: 0.4
+};
+const generationBaseInputs = {
+  max_tokens: document.getElementById('base-max-tokens'),
+  temperature: document.getElementById('base-temperature'),
+  top_p: document.getElementById('base-top-p'),
+  presence_penalty: document.getElementById('base-presence-penalty')
+};
+const generationControlParameters = {
+  length: 'max_tokens',
+  pacing: 'top_p',
+  chaos: 'temperature',
+  tension: 'presence_penalty'
+};
 const creativeControlIds = [
   'length',
   'pacing',
@@ -211,20 +229,31 @@ async function executeCommand({ cmd, flags, args }) {
     return;
   }
 
-  if (cmd === 'delete' || cmd === 'del' || cmd === 'rm' || cmd === 'd') {
+  if (cmd === 'delete' || cmd === 'del' || cmd === 'rm' || cmd === 'd' || cmd === 'rmdir') {
+    const directoryOnly = cmd === 'rmdir';
     const record = findRecord(inputdir || currentPath);
     if (!record) {
       if (!hasFlag(flags, '--force', '-f')) printTerminal(`Record not found: ${inputdir || currentPath}`);
       return;
     }
-    if (record.type !== 'scene' && !hasFlag(flags, '--recursive', '-r')) {
+    if (directoryOnly && record.type === 'scene') {
+      printTerminal(`rmdir only removes folders, books, and chapters: ${record.path}`, 'error');
+      return;
+    }
+    const recursive = hasFlag(flags, '--recursive', '-r');
+    const descendants = recordArray.filter(item => isPathInside(item.path, record.path));
+    if (directoryOnly && descendants.length && !recursive) {
+      printTerminal(`Directory not empty: ${record.path}. Use --recursive or -r.`, 'error');
+      return;
+    }
+    if (!directoryOnly && record.type !== 'scene' && !recursive) {
       printTerminal(`Use --recursive or -r to delete ${record.path} and its contents.`);
       return;
     }
     // Removing a container also removes every record below its virtual path.
-    const records = record.type === 'scene'
+    const records = record.type === 'scene' || !recursive
       ? [record]
-      : recordArray.filter(item => item.path === record.path || isPathInside(item.path, record.path));
+      : [record, ...descendants];
     for (const item of records) await deleteRecord(recordDirectory, item.id);
     if (records.some(item => item.id === currentRecord?.id)) {
       currentRecord = null;
@@ -272,6 +301,7 @@ async function executeCommand({ cmd, flags, args }) {
       'load <path|id> | save | pwd | cd <path>\n' +
       'mv [-f|--force] <source> <destination>\n' +
       'rm [-r|--recursive] [-f|--force] <path|id> (combined: -rf)\n' +
+      'rmdir [-r|--recursive] [-f|--force] <path|id> (combined: -rf)\n' +
       'generate [-m|--missing] [-s|--stale] [-f|--force] [-n|--dry-run] [path]\n' +
       'neofetch [-a|--ascii] [boykisser|cherenkov|snep]\n' +
       'color [cyan|blue|green|yellow|red|pink|white|reset]\n' +
@@ -538,7 +568,11 @@ function setupCreativeControls() {
 
 function updateSlider(slider) {
   const output = document.querySelector(`[data-value-for="${slider.id}"]`);
-  if (output) output.textContent = `${slider.value}%`;
+  if (output) {
+    output.textContent = generationControlParameters[slider.id]
+      ? `${getControlMultiplier(slider.value).toFixed(2)}×`
+      : `${slider.value}%`;
+  }
   slider.style.setProperty('--value', `${slider.value}%`);
   slider.style.setProperty('--slider-color', `hsl(${195 + Number(slider.value) * 1.25} 100% 62%)`);
 }
@@ -678,8 +712,9 @@ function resolveSceneContext(scene, controls = resolveCreativeControls(scene)) {
   return [hierarchy, getCreativeContext(controls)].filter(Boolean).join('\n\n');
 }
 
-// Creative controls are prompt guidance rather than a second settings engine.
-// This keeps them provider-independent while still making every control useful.
+// Include the resolved multipliers in the prompt so the model sees the same
+// creative intent as the request parameters. Dialogue and prose remain purely
+// prompt guidance because the API has no direct equivalents for them.
 function getCreativeContext(values) {
   const notes = [
     ['Core hook', values['premise-corehook']],
@@ -689,25 +724,39 @@ function getCreativeContext(values) {
   ].filter(([, value]) => value.trim());
   return [
     'Creative controls:',
-    `Length: ${values.length}/100`,
-    `Pacing: ${values.pacing}/100`,
-    `Chaos: ${values.chaos}/100`,
+    `Length multiplier: ${getControlMultiplier(values.length).toFixed(2)}x`,
+    `Pacing multiplier: ${getControlMultiplier(values.pacing).toFixed(2)}x`,
+    `Chaos multiplier: ${getControlMultiplier(values.chaos).toFixed(2)}x`,
     `Dialogue share: ${values['dialogue-share']}/100`,
-    `Tension: ${values.tension}/100`,
+    `Tension multiplier: ${getControlMultiplier(values.tension).toFixed(2)}x`,
     ...notes.map(([label, value]) => `${label}: ${value}`)
   ].join('\n');
 }
 
-// Map only controls with a sensible API equivalent. Dialogue share and the
-// prose notes remain prompt guidance because chat APIs have no direct fields
-// for them.
+// A slider no longer chooses an absolute API value. Fifty is the neutral 1x
+// point; inherited controls scale the editable base settings by 0.5x to 1.5x.
+function getControlMultiplier(value) {
+  return 0.5 + Number(value) / 100;
+}
+
+function getBaseGenerationParams() {
+  return Object.fromEntries(Object.entries(generationBaseInputs).map(([parameter, input]) => {
+    const value = input.valueAsNumber;
+    return [parameter, Number.isFinite(value) ? value : generationBaseDefaults[parameter]];
+  }));
+}
+
+// Provider limits are applied after multiplication. Dialogue share and prose
+// notes remain prompt-only because chat-completions APIs have no such fields.
 function getGenerationParams(values) {
-  const scale = (value, minimum, maximum) => minimum + Number(value) / 100 * (maximum - minimum);
+  const base = getBaseGenerationParams();
+  const multiply = control => base[generationControlParameters[control]] * getControlMultiplier(values[control]);
+  const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
   return {
-    max_tokens: Math.round(scale(values.length, 256, 4096)),
-    temperature: Number(scale(values.chaos, 0.2, 1.5).toFixed(2)),
-    top_p: Number(scale(values.pacing, 0.65, 1).toFixed(2)),
-    presence_penalty: Number(scale(values.tension, 0, 0.8).toFixed(2))
+    max_tokens: Math.round(clamp(multiply('length'), 1, 131072)),
+    temperature: Number(clamp(multiply('chaos'), 0, 2).toFixed(2)),
+    top_p: Number(clamp(multiply('pacing'), 0.01, 1).toFixed(2)),
+    presence_penalty: Number(clamp(multiply('tension'), -2, 2).toFixed(2))
   };
 }
 
@@ -812,6 +861,8 @@ function loadConfig() {
     apiKeyInput.value = config.apiKey || '';
     modelInput.value = config.model || '';
     systemPromptInput.value = config.systemPrompt || '';
+    const baseParams = { ...generationBaseDefaults, ...config.baseGenerationParams };
+    for (const [parameter, input] of Object.entries(generationBaseInputs)) input.value = baseParams[parameter];
     Object.assign(globalCreativeControls, config.creativeControls || {});
   } catch (error) {
     console.error('Failed to load config:', error);
@@ -824,6 +875,7 @@ function saveConfig() {
     apiKey: apiKeyInput.value,
     model: modelInput.value,
     systemPrompt: systemPromptInput.value,
+    baseGenerationParams: getBaseGenerationParams(),
     creativeControls: globalCreativeControls
   }));
   setTerminalState('configuration saved');

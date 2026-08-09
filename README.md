@@ -4,7 +4,7 @@ Cherenkov is a framework-free, browser-based story generator controlled through 
 
 The workspace responds from wide desktop layouts down to narrow phone screens. The editor remains the primary surface, creative controls feed directly into scene prompts, and the combined terminal uses the bundled `VT323-Regular.ttf` font with a monospace fallback.
 
-Creative controls inherit through `global defaults → folder → book → chapter → scene`. A record stores only the values edited at that level; reset removes its local overrides. Generation maps length to `max_tokens`, chaos to `temperature`, pacing to `top_p`, and tension to `presence_penalty`. Dialogue share and prose notes remain prompt guidance.
+Creative controls inherit through `global defaults → folder → book → chapter → scene`. A record stores only the values edited at that level; reset removes its local overrides. Length, chaos, pacing, and tension range from `0.50x` to `1.50x`, with `1.00x` at the center. They multiply the base `max_tokens`, `temperature`, `top_p`, and `presence_penalty` values configured in generation settings. Dialogue share and prose notes remain prompt guidance.
 
 Serve the directory over localhost so the browser can use Origin Private File System (OPFS):
 
@@ -28,6 +28,8 @@ cd /folder/book
 mv /folder/book/chapter/scene /folder/book/chapter/new-name
 rm /folder/book/chapter/new-name
 rm -rf /folder/book
+rmdir /empty-folder
+rmdir -rf /folder/book
 generate /folder/book
 generate --missing /folder/book
 generate --dry-run --stale /folder/book
@@ -48,6 +50,7 @@ Short flags can be combined, so `rm -rf /folder/book` is the same as
 | `mkdir` | `-p`, `--parents` creates missing folder, book, and chapter records. |
 | `mv` | `-f`, `--force` replaces an existing destination of the same type. |
 | `rm` | `-r`, `--recursive` removes containers; `-f`, `--force` suppresses missing-path errors. |
+| `rmdir` | Removes an empty folder, book, or chapter; `-r`, `--recursive` includes its descendants; `-f`, `--force` suppresses missing-path errors. |
 | `generate` | `-m`, `--missing`; `-s`, `--stale`; `-f`, `--force`; `-n`, `--dry-run`. |
 | `neofetch` | `-a`, `--ascii` accepts `boykisser`, `cherenkov`, or `snep`. The flag is optional. |
 | `color` | Sets all regular terminal input and output to `cyan`, `blue`, `green`, `yellow`, `red`, `pink`, or `white`; `reset` restores cyan. |
@@ -78,6 +81,9 @@ flowchart LR
         ARECORDS <--> AOPFS[OPFS records by immutable ID]
         ARECORDS --> ACTX[Inherited scene context]
         ACTX --> AAPI[System and user messages]
+        ABASE[Base generation settings] --> AMULT[Apply inherited multipliers]
+        ARECORDS --> AMULT
+        AMULT --> AAPI
         AAPI --> ARECORDS
         ACMD --> ANEO[Colored neofetch renderer]
         ARECORDS --> ANEO

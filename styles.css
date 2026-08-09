@@ -329,7 +329,8 @@ textarea::placeholder {
 }
 
 .context-grid,
-.config-fields {
+.config-fields,
+.generation-base-grid {
   display: grid;
   gap: 10px;
 }
@@ -339,10 +340,23 @@ textarea::placeholder {
 }
 
 .context-grid label,
-.config-fields label {
+.config-fields label,
+.generation-base-grid label {
   min-width: 0;
   display: grid;
   gap: 6px;
+}
+
+.generation-base-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-label {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .text-area-small,
@@ -619,7 +633,8 @@ textarea::-webkit-scrollbar-thumb,
 
   .sidebar,
   .range-grid,
-  .context-grid {
+  .context-grid,
+  .generation-base-grid {
     grid-template-columns: 1fr;
   }
 
