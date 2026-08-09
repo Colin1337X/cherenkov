@@ -200,6 +200,38 @@ textarea::placeholder {
   color: rgba(107, 165, 200, 0.48);
 }
 
+.reasoning-panel {
+  margin-bottom: 14px;
+  border: 1px solid rgba(1, 135, 224, 0.22);
+  border-radius: 10px;
+  background: rgba(0, 8, 13, 0.72);
+}
+
+.reasoning-panel[hidden] {
+  display: none;
+}
+
+.reasoning-panel summary {
+  padding: 8px 11px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+#reasoning-output {
+  max-height: 180px;
+  margin: 0;
+  padding: 0 12px 12px;
+  overflow: auto;
+  color: #89c9e8;
+  font-family: "VT323", "Courier New", monospace;
+  font-size: 1rem;
+  line-height: 1.25;
+  white-space: pre-wrap;
+}
+
 .status-pill {
   padding: 6px 10px;
   border: 1px solid rgba(1, 135, 224, 0.26);

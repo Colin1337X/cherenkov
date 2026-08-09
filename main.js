@@ -50,12 +50,15 @@ const editorStatusElement = document.getElementById("editor-status");
 const editorTitleElement = document.getElementById("editor-title");
 const saveStatusElement = document.getElementById("save-status");
 const tokenSpeedElement = document.getElementById("token-speed");
+const reasoningPanelElement = document.getElementById("reasoning-panel");
+const reasoningOutputElement = document.getElementById("reasoning-output");
 const terminalStateElement = document.getElementById("terminal-state");
 const terminalShell = document.querySelector(".terminal-shell");
 const resetCreativeControlsButton = document.getElementById("reset-creative-controls");
 const endpointInput = document.getElementById("openai-endpoint");
 const apiKeyInput = document.getElementById("openai-api-key");
 const modelInput = document.getElementById("openai-model");
+const reasoningEffortInput = document.getElementById("reasoning-effort");
 const systemPromptInput = document.getElementById("system-prompt");
 const availableModelsSelect = document.getElementById("available-models");
 const saveConfigButton = document.getElementById("save-config-button");
@@ -170,10 +173,13 @@ async function executeCommand({ cmd, flags, args }) {
       const controls = resolveCreativeControls(record);
       const params = getGenerationParams(controls);
       let streamedIntoEditor = false;
+      if (currentRecord?.id === record.id) showReasoning('');
       setTokenSpeed(0, true);
       const generation = await openaiGen(resolveSceneContext(record, controls), params, update => {
         setTokenSpeed(update.tokensPerSecond, true);
         if (currentRecord?.id === record.id) {
+          showReasoning(update.reasoning);
+          if (!update.content) return;
           streamedIntoEditor = true;
           mainEditor.value = update.content;
           mainEditor.scrollTop = mainEditor.scrollHeight;
@@ -189,10 +195,17 @@ async function executeCommand({ cmd, flags, args }) {
       }
       record.content = generation.content;
       record.updatedAt = new Date().toISOString();
-      record.lastGeneration = { controls, params, ...generation.metrics, generatedAt: record.updatedAt };
+      record.lastGeneration = {
+        controls,
+        params,
+        reasoning: generation.reasoning || undefined,
+        ...generation.metrics,
+        generatedAt: record.updatedAt
+      };
       await saveRecord(recordDirectory, record);
       if (currentRecord?.id === record.id) {
         mainEditor.value = generation.content;
+        showReasoning(generation.reasoning);
         setSaveStatus('saved');
       }
       setTokenSpeed(generation.metrics.tokensPerSecond);
@@ -226,6 +239,7 @@ async function executeCommand({ cmd, flags, args }) {
       creativeOverrideIds.clear();
       showCreativeControls(globalCreativeControls);
       setTokenSpeed(null);
+      showReasoning('');
       setSaveStatus('ready');
       printTerminal('Loaded global creative defaults.');
       return;
@@ -241,6 +255,7 @@ async function executeCommand({ cmd, flags, args }) {
     creativeOverrideIds = new Set(Object.keys(record.creativeControls || {}));
     showCreativeControls(resolveCreativeControls(record), creativeOverrideIds);
     setTokenSpeed(record.lastGeneration?.tokensPerSecond);
+    showReasoning(record.lastGeneration?.reasoning);
     setSaveStatus('saved');
     printTerminal(`Loaded ${record.path}.`);
     return;
@@ -279,6 +294,7 @@ async function executeCommand({ cmd, flags, args }) {
       creativeOverrideIds.clear();
       showCreativeControls(globalCreativeControls);
       setTokenSpeed(null);
+      showReasoning('');
       setSaveStatus('ready');
     }
     await refreshRecords();
@@ -432,6 +448,7 @@ async function showNeofetch(requestedName) {
     ['viewport', `${window.innerWidth}x${window.innerHeight}`],
     ['api', endpoint || 'not configured'],
     ['model', modelInput.value || 'not selected'],
+    ['reasoning', reasoningEffortInput.value || 'provider default'],
     ['median tok/s', speeds.length ? median(speeds).toFixed(2) : 'no samples'],
     ['speed samples', String(speeds.length)],
     ['storage', `${formatBytes(storage.usage)} / ${formatBytes(storage.quota)}`],
@@ -581,6 +598,19 @@ function setTokenSpeed(rate, streaming = false) {
   tokenSpeedElement.hidden = false;
   tokenSpeedElement.textContent = `${rate.toFixed(1)} tok/s`;
   tokenSpeedElement.dataset.state = streaming ? 'streaming' : 'complete';
+}
+
+function showReasoning(reasoning = '') {
+  reasoning = typeof reasoning === 'string' ? reasoning : '';
+  const wasHidden = reasoningPanelElement.hidden;
+  reasoningOutputElement.textContent = reasoning;
+  reasoningPanelElement.hidden = !reasoning.trim();
+  if (reasoning) {
+    if (wasHidden) reasoningPanelElement.open = true;
+    reasoningOutputElement.scrollTop = reasoningOutputElement.scrollHeight;
+  } else {
+    reasoningPanelElement.open = false;
+  }
 }
 
 function setTerminalState(status) {
@@ -785,7 +815,8 @@ function getGenerationParams(values) {
     max_tokens: Math.round(clamp(multiply('length'), 1, 131072)),
     temperature: Number(clamp(multiply('chaos'), 0, 2).toFixed(2)),
     top_p: Number(clamp(multiply('pacing'), 0.01, 1).toFixed(2)),
-    presence_penalty: Number(clamp(multiply('tension'), -2, 2).toFixed(2))
+    presence_penalty: Number(clamp(multiply('tension'), -2, 2).toFixed(2)),
+    ...(reasoningEffortInput.value && { reasoning_effort: reasoningEffortInput.value })
   };
 }
 
@@ -830,6 +861,7 @@ async function createRecord(path, requestedType) {
     creativeOverrideIds.clear();
     showCreativeControls(resolveCreativeControls(record), creativeOverrideIds);
     setTokenSpeed(null);
+    showReasoning('');
     setSaveStatus('saved');
   }
   printTerminal(`Created ${type}: ${path}`);
@@ -861,23 +893,29 @@ async function openaiGen(context, params, onUpdate) {
     }
 
     let content;
+    let reasoning = '';
     let usage;
     if (response.body && response.headers.get('content-type')?.includes('text/event-stream')) {
-      ({ content, usage } = await readCompletionStream(response, startedAt, onUpdate));
+      ({ content, reasoning, usage } = await readCompletionStream(response, startedAt, onUpdate));
     } else {
       const output = await response.json();
       if (output?.error) throw new Error(output.error.message || 'Generation failed.');
-      content = output?.choices?.[0]?.message?.content;
+      const message = output?.choices?.[0]?.message;
+      content = message?.content;
+      reasoning = readReasoningText(message);
       usage = output?.usage;
-      if (typeof content === 'string') onUpdate?.({ content, ...measureCompletion(content, usage, startedAt) });
+      if (typeof content === 'string') {
+        onUpdate?.({ content, reasoning, ...measureCompletion(content, reasoning, usage, startedAt) });
+      }
     }
     if (typeof content !== 'string' || !content.trim()) throw new Error('API response missing content.');
     return {
       content,
+      reasoning,
       metrics: {
         endpoint,
         model: modelInput.value,
-        ...measureCompletion(content, usage, startedAt)
+        ...measureCompletion(content, reasoning, usage, startedAt)
       }
     };
   } catch (error) {
@@ -893,6 +931,7 @@ async function readCompletionStream(response, startedAt, onUpdate) {
   const decoder = new TextDecoder();
   let buffer = '';
   let content = '';
+  let reasoning = '';
   let usage;
   const readLine = line => {
     if (!line.startsWith('data:')) return;
@@ -901,10 +940,13 @@ async function readCompletionStream(response, startedAt, onUpdate) {
     const event = JSON.parse(data);
     if (event.error) throw new Error(event.error.message || 'Generation failed.');
     if (event.usage) usage = event.usage;
-    const delta = event.choices?.[0]?.delta?.content ?? event.choices?.[0]?.text;
+    const choice = event.choices?.[0];
+    const delta = choice?.delta?.content ?? choice?.text;
+    const reasoningDelta = readReasoningText(choice?.delta);
     if (typeof delta === 'string' && delta) content += delta;
-    if (content && (delta || event.usage)) {
-      onUpdate?.({ content, ...measureCompletion(content, usage, startedAt) });
+    if (reasoningDelta) reasoning += reasoningDelta;
+    if ((content || reasoning) && (delta || reasoningDelta || event.usage)) {
+      onUpdate?.({ content, reasoning, ...measureCompletion(content, reasoning, usage, startedAt) });
     }
   };
 
@@ -917,14 +959,25 @@ async function readCompletionStream(response, startedAt, onUpdate) {
     if (done) break;
   }
   if (buffer.trim()) readLine(buffer.trimEnd());
-  return { content, usage };
+  return { content, reasoning, usage };
 }
 
-function measureCompletion(content, usage, startedAt) {
+function readReasoningText(part) {
+  const value = part?.reasoning_content ?? part?.reasoning ?? part?.thinking;
+  if (typeof value === 'string') return value;
+  if (typeof value?.content === 'string') return value.content;
+  if (Array.isArray(value)) return value.map(item => item?.text || item?.content || '').join('');
+  return '';
+}
+
+function measureCompletion(content, reasoning, usage, startedAt) {
   const elapsedSeconds = Math.max(0.001, (performance.now() - startedAt) / 1000);
-  const completionTokens = Number(usage?.completion_tokens) || Math.max(1, Math.round(content.length / 4));
+  const completionTokens = Number(usage?.completion_tokens)
+    || Math.max(1, Math.round((content.length + reasoning.length) / 4));
+  const reasoningTokens = Number(usage?.completion_tokens_details?.reasoning_tokens) || 0;
   return {
     completionTokens,
+    reasoningTokens,
     elapsedSeconds: Number(elapsedSeconds.toFixed(3)),
     tokensPerSecond: Number((completionTokens / elapsedSeconds).toFixed(2))
   };
@@ -946,6 +999,7 @@ function loadConfig() {
     apiKeyInput.value = config.apiKey || '';
     modelInput.value = config.model || '';
     systemPromptInput.value = config.systemPrompt || '';
+    reasoningEffortInput.value = config.reasoningEffort || '';
     const baseParams = { ...generationBaseDefaults, ...config.baseGenerationParams };
     for (const [parameter, input] of Object.entries(generationBaseInputs)) input.value = baseParams[parameter];
     Object.assign(globalCreativeControls, config.creativeControls || {});
@@ -960,6 +1014,7 @@ function saveConfig() {
     apiKey: apiKeyInput.value,
     model: modelInput.value,
     systemPrompt: systemPromptInput.value,
+    reasoningEffort: reasoningEffortInput.value,
     baseGenerationParams: getBaseGenerationParams(),
     creativeControls: globalCreativeControls
   }));

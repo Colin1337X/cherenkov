@@ -6,6 +6,8 @@ The workspace responds from wide desktop layouts down to narrow phone screens. T
 
 Generation streams OpenAI-compatible chat-completion deltas into the active editor. A compact token-rate indicator shows a live estimate during streaming and the provider-reported completion rate when usage metadata arrives.
 
+Reasoning-capable providers can stream `reasoning_content`, `reasoning`, or `thinking` separately from story text. Generation settings offer an optional `reasoning_effort`; leaving it at provider default omits the field from the request.
+
 Creative controls inherit through `global defaults → folder → book → chapter → scene`. A record stores only the values edited at that level; reset removes its local overrides. Length, chaos, pacing, and tension range from `0.50x` to `1.50x`, with `1.00x` at the center. They multiply the base `max_tokens`, `temperature`, `top_p`, and `presence_penalty` values configured in generation settings. Dialogue share and prose notes remain prompt guidance.
 
 Serve the directory over localhost so the browser can use Origin Private File System (OPFS):
@@ -87,7 +89,7 @@ flowchart LR
         ARECORDS --> AMULT
         AMULT --> AAPI
         AAPI --> ASTREAM[Stream text and token rate]
-        ASTREAM --> AEDITOR[Live editor and speed indicator]
+        ASTREAM --> AEDITOR[Live editor reasoning and speed]
         ASTREAM --> ARECORDS
         ACMD --> ANEO[Colored neofetch renderer]
         ARECORDS --> ANEO
