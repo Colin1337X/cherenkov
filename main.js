@@ -5,17 +5,38 @@ async function init() {
     saveConfigButton.addEventListener('click', saveconfig);
     getModelsButton.addEventListener('click', getModels);
     availableModelsSelect.addEventListener('change', syncmodelselect);
+    setupCreativeControls();
     loadconfig();
+    refreshCreativeControls();
     await getModels();
     await initStorage().then(root => opfsroot = root);
     recordDirectory = await getRecordDirectory();
     await refreshRecords();
+    renderUiState();
+    mainEditor.addEventListener('input', () => {
+      setSaveStatus('unsaved');
+      renderUiState();
+    });
+    document.getElementById('creative-controls').addEventListener('input', () => setTerminalState('controls changed'));
+    resetCreativeControlsButton.addEventListener('click', resetCreativeControls);
     commandInput.addEventListener('keydown', async (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
         const command = commandInput.value.trim();
+        if (!command) return;
         commandInput.value = '';
-        await tokenizecommand(command);
+        commandInput.disabled = true;
+        setTerminalState('working');
+        try {
+          await tokenizecommand(command);
+        } catch (error) {
+          console.error('Command failed:', error);
+          printTerminal(`Error: ${error.message}`);
+        } finally {
+          commandInput.disabled = false;
+          setTerminalState('ready');
+          commandInput.focus();
+        }
       }
     });
 }
@@ -23,6 +44,23 @@ async function init() {
 const commandInput = document.getElementById("terminal-input");
 const mainEditor = document.getElementById("main-editor");
 const terminalOutput = document.getElementById("terminal-output");
+const currentPathElement = document.getElementById("current-path");
+const editorStatusElement = document.getElementById("editor-status");
+const editorTitleElement = document.getElementById("editor-title");
+const saveStatusElement = document.getElementById("save-status");
+const terminalStateElement = document.getElementById("terminal-state");
+const resetCreativeControlsButton = document.getElementById("reset-creative-controls");
+const creativeControlIds = [
+  'length',
+  'pacing',
+  'chaos',
+  'dialogue-share',
+  'tension',
+  'premise-corehook',
+  'style-guide',
+  'world-rules-constraints',
+  'character-ledger-and-arcs'
+];
 
 // These values are shared by every terminal command. In particular,
 // currentPath must live outside executecommand() so it survives between
@@ -91,7 +129,10 @@ async function executecommand({ cmd, flags, args }) {
       record.content = content;
       record.updatedAt = new Date().toISOString();
       await saveRecord(recordDirectory, record);
-      if (currentRecord?.id === record.id) mainEditor.value = content;
+      if (currentRecord?.id === record.id) {
+        mainEditor.value = content;
+        setSaveStatus('saved');
+      }
     }
     await refreshRecords();
     printTerminal(`Generated ${scenes.length} scene${scenes.length === 1 ? '' : 's'}.`);
@@ -107,6 +148,7 @@ async function executecommand({ cmd, flags, args }) {
     currentRecord.updatedAt = new Date().toISOString();
     await saveRecord(recordDirectory, currentRecord);
     await refreshRecords();
+    setSaveStatus('saved');
     printTerminal(`Saved ${currentRecord.path}.`);
     return;
   }
@@ -120,6 +162,7 @@ async function executecommand({ cmd, flags, args }) {
     currentRecord = record;
     currentPath = record.path;
     mainEditor.value = record.content || '';
+    setSaveStatus('saved');
     printTerminal(`Loaded ${record.path}.`);
     return;
   }
@@ -143,6 +186,7 @@ async function executecommand({ cmd, flags, args }) {
       currentRecord = null;
       currentPath = '/';
       mainEditor.value = '';
+      setSaveStatus('ready');
     }
     await refreshRecords();
     printTerminal(`Deleted ${records.length} record${records.length === 1 ? '' : 's'}.`);
@@ -229,6 +273,58 @@ async function executecommand({ cmd, flags, args }) {
 function printTerminal(message) {
   terminalOutput.value += message + '\n';
   terminalOutput.scrollTop = terminalOutput.scrollHeight;
+  renderUiState();
+}
+
+// Keep the small status areas in sync without introducing application state
+// beyond the values the editor and shell already own.
+function renderUiState() {
+  const text = mainEditor.value;
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  currentPathElement.textContent = currentPath;
+  editorStatusElement.textContent = `${words} word${words === 1 ? '' : 's'} · ${text.length} character${text.length === 1 ? '' : 's'}`;
+  editorTitleElement.textContent = currentRecord?.name || 'no scene loaded';
+}
+
+function setSaveStatus(status) {
+  saveStatusElement.textContent = status;
+  saveStatusElement.dataset.state = status;
+}
+
+function setTerminalState(status) {
+  terminalStateElement.textContent = status;
+  terminalStateElement.dataset.state = status;
+}
+
+// Sliders update both their visible values and their filled tracks immediately.
+// Reset uses the defaults declared beside each input in index.html.
+function setupCreativeControls() {
+  for (const slider of document.querySelectorAll('.slider')) {
+    slider.addEventListener('input', () => updateSlider(slider));
+  }
+}
+
+function updateSlider(slider) {
+  const output = document.querySelector(`[data-value-for="${slider.id}"]`);
+  if (output) output.textContent = `${slider.value}%`;
+  slider.style.setProperty('--value', `${slider.value}%`);
+}
+
+function refreshCreativeControls() {
+  document.querySelectorAll('.slider').forEach(updateSlider);
+}
+
+function resetCreativeControls() {
+  for (const id of creativeControlIds) {
+    const control = document.getElementById(id);
+    control.value = control.matches('input[type="range"]') ? control.dataset.default : '';
+  }
+  refreshCreativeControls();
+  setTerminalState('controls reset');
+}
+
+function readCreativeControls() {
+  return Object.fromEntries(creativeControlIds.map(id => [id, document.getElementById(id).value]));
 }
 
 // Long and short flag names are accepted by the same command branches.
@@ -285,7 +381,7 @@ function getScenesUnder(path) {
 // Build the user message from the scene and all of its ancestors. The order
 // is broad context first and scene-specific context last.
 function resolveSceneContext(scene) {
-  return recordArray
+  const hierarchy = recordArray
     .filter(record => record.path && (record.path === scene.path || isPathInside(scene.path, record.path)))
     .sort((a, b) => a.path.length - b.path.length)
     .map(record => [
@@ -295,6 +391,28 @@ function resolveSceneContext(scene) {
       record.type === 'scene' ? record.content : null
     ].filter(Boolean).join('\n'))
     .join('\n\n');
+  return [hierarchy, getCreativeContext()].filter(Boolean).join('\n\n');
+}
+
+// Creative controls are prompt guidance rather than a second settings engine.
+// This keeps them provider-independent while still making every control useful.
+function getCreativeContext() {
+  const values = readCreativeControls();
+  const notes = [
+    ['Core hook', values['premise-corehook']],
+    ['Style guide', values['style-guide']],
+    ['World rules and constraints', values['world-rules-constraints']],
+    ['Character ledger and arcs', values['character-ledger-and-arcs']]
+  ].filter(([, value]) => value.trim());
+  return [
+    'Creative controls:',
+    `Length: ${values.length}/100`,
+    `Pacing: ${values.pacing}/100`,
+    `Chaos: ${values.chaos}/100`,
+    `Dialogue share: ${values['dialogue-share']}/100`,
+    `Tension: ${values.tension}/100`,
+    ...notes.map(([label, value]) => `${label}: ${value}`)
+  ].join('\n');
 }
 
 async function refreshRecords() {
@@ -302,7 +420,7 @@ async function refreshRecords() {
   document.getElementById('explorer-content').textContent = recordArray
     .sort((a, b) => (a.path || a.id).localeCompare(b.path || b.id))
     .map(formatRecord)
-    .join('\n');
+    .join('\n') || 'no records yet';
 }
 
 // New records use one consistent shape. The path depth supplies the node type,
@@ -334,6 +452,7 @@ async function createRecord(path, requestedType) {
     currentRecord = record;
     currentPath = path;
     mainEditor.value = '';
+    setSaveStatus('saved');
   }
   printTerminal(`Created ${type}: ${path}`);
 }
@@ -386,6 +505,11 @@ function loadconfig() {
         document.getElementById("openai-endpoint").value = config.endpoint || "https://nothing.here:8080/v1";
         document.getElementById("openai-api-key").value = config.apiKey || "";
         document.getElementById("openai-model").value = config.model || "example model";
+        document.getElementById("system-prompt").value = config.systemPrompt || "";
+        for (const [id, value] of Object.entries(config.creativeControls || {})) {
+          const control = document.getElementById(id);
+          if (control) control.value = value;
+        }
   } catch (error) {
       console.error('Failed to load config:', error);
   }
@@ -394,9 +518,12 @@ function saveconfig() {
     const config = {
         endpoint: document.getElementById("openai-endpoint").value,
         apiKey: document.getElementById("openai-api-key").value,
-        model: document.getElementById("openai-model").value
+        model: document.getElementById("openai-model").value,
+        systemPrompt: document.getElementById("system-prompt").value,
+        creativeControls: readCreativeControls()
     };
     localStorage.setItem("config", JSON.stringify(config));
+    setTerminalState('configuration saved');
 }
 // These controls are present in index.html and are reused during startup.
 const saveConfigButton = document.getElementById("save-config-button");
@@ -575,6 +702,7 @@ async function moveRecord(sourcePath, newPath, force) {
   }
   await refreshRecords();
   currentRecord = currentRecord ? recordArray.find(item => item.id === currentRecord.id) : null;
+  if (currentRecord) setSaveStatus('saved');
   return true;
 }
 

@@ -4,33 +4,118 @@
         <meta charset="UTF-8">
         <title>cherenkov</title>
         <link rel="stylesheet" href="styles.css">
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
         <script src="main.js" defer></script>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
     </head>
     <body>
-       <div class="container"> 
-            <h1 class="title">cherenkov</h1>
+        <div class="container">
+            <header class="app-header">
+                <div>
+                    <p class="eyebrow">story workspace</p>
+                    <h1 class="title">cherenkov</h1>
+                </div>
+                <div class="header-status" aria-live="polite">
+                    <span id="current-path">/</span>
+                    <span id="editor-status">0 words · 0 characters</span>
+                </div>
+            </header>
 
-            <textarea class="resizable-text-area" placeholder="editor" id="main-editor"></textarea>
-            <div class="box" id="explorer">
-                <h3 class="text">file explorer</h3>
-                <p class="text" id="explorer-content"></p>
-            </div>
+            <main class="workspace">
+                <section class="panel editor-panel">
+                    <div class="panel-heading">
+                        <div>
+                            <p class="eyebrow">scene editor</p>
+                            <h2 id="editor-title">no scene loaded</h2>
+                        </div>
+                        <span class="status-pill" id="save-status">ready</span>
+                    </div>
+                    <textarea class="resizable-text-area" placeholder="Load or create a scene, then begin writing…" id="main-editor" aria-label="Story editor"></textarea>
+                </section>
 
-            <textarea class="text-area" id="terminal-output" readonly></textarea>
-            <input type="text" class="input-field" id="terminal-input">
-            <div class="box" id="config-box">
-                <textarea class="text-area-small" placeholder="system prompt" id="system-prompt"></textarea>
-                <input type="text" class="input-field" placeholder="endpoint" id="openai-endpoint">
-                <input type="password" class="input-field" placeholder="api key" id="openai-api-key">
-                <input type="text" class="input-field" placeholder="model" id="openai-model">
-                <select class="input-field" id="available-models">
-                    <option value="">available models</option>
-                </select>
-                <button class="button" id="save-config-button">Save Config</button>
-                <button class="button" id="get-models-button">Get Models</button>
-            </div>
-            <h6 id="center-text" class="center-text">made with ❤️‍🔥 by colin</h6>
+                <aside class="sidebar">
+                    <section class="panel explorer-panel" id="explorer">
+                        <div class="panel-heading compact">
+                            <div>
+                                <p class="eyebrow">library</p>
+                                <h2>story paths</h2>
+                            </div>
+                        </div>
+                        <pre class="text" id="explorer-content">no records yet</pre>
+                    </section>
+
+                    <section class="panel" id="creative-controls">
+                        <div class="panel-heading compact">
+                            <div>
+                                <p class="eyebrow">generation</p>
+                                <h2>creative controls</h2>
+                            </div>
+                            <button class="quiet-button" id="reset-creative-controls" type="button">reset</button>
+                        </div>
+
+                        <div class="range-grid">
+                            <label class="range-control" for="length">
+                                <span>length <output data-value-for="length">55%</output></span>
+                                <input type="range" class="slider" id="length" min="0" max="100" value="55" data-default="55">
+                            </label>
+                            <label class="range-control" for="pacing">
+                                <span>pacing <output data-value-for="pacing">50%</output></span>
+                                <input type="range" class="slider" id="pacing" min="0" max="100" value="50" data-default="50">
+                            </label>
+                            <label class="range-control" for="chaos">
+                                <span>chaos <output data-value-for="chaos">35%</output></span>
+                                <input type="range" class="slider" id="chaos" min="0" max="100" value="35" data-default="35">
+                            </label>
+                            <label class="range-control" for="dialogue-share">
+                                <span>dialogue <output data-value-for="dialogue-share">40%</output></span>
+                                <input type="range" class="slider" id="dialogue-share" min="0" max="100" value="40" data-default="40">
+                            </label>
+                            <label class="range-control" for="tension">
+                                <span>tension <output data-value-for="tension">60%</output></span>
+                                <input type="range" class="slider" id="tension" min="0" max="100" value="60" data-default="60">
+                            </label>
+                        </div>
+
+                        <div class="context-grid">
+                            <label>core hook<textarea class="text-area-small" id="premise-corehook" placeholder="What makes this story matter?"></textarea></label>
+                            <label>style guide<textarea class="text-area-small" id="style-guide" placeholder="Voice, tense, tone, and prose rules"></textarea></label>
+                            <label>world rules<textarea class="text-area-small" id="world-rules-constraints" placeholder="Constraints the story must obey"></textarea></label>
+                            <label>characters<textarea class="text-area-small" id="character-ledger-and-arcs" placeholder="Cast, motivations, and current arcs"></textarea></label>
+                        </div>
+                    </section>
+
+                    <details class="panel config-panel" id="config-box">
+                        <summary>connection settings</summary>
+                        <div class="config-fields">
+                            <label>system prompt<textarea class="text-area-small" placeholder="system prompt" id="system-prompt"></textarea></label>
+                            <label>endpoint<input type="text" class="input-field" placeholder="http://localhost:8080/v1" id="openai-endpoint"></label>
+                            <label>API key<input type="password" class="input-field" placeholder="optional for local models" id="openai-api-key"></label>
+                            <label>model<input type="text" class="input-field" placeholder="model" id="openai-model"></label>
+                            <label>available models<select class="input-field" id="available-models"><option value="">available models</option></select></label>
+                            <div class="button-row">
+                                <button class="button" id="save-config-button">save</button>
+                                <button class="button secondary" id="get-models-button">refresh models</button>
+                            </div>
+                        </div>
+                    </details>
+                </aside>
+            </main>
+
+            <section class="terminal-shell" aria-label="Cherenkov terminal">
+                <div class="terminal-bar">
+                    <span>terminal</span>
+                    <span id="terminal-state" aria-live="polite">ready</span>
+                </div>
+                <textarea class="terminal-output" id="terminal-output" readonly aria-label="Terminal output"></textarea>
+                <label class="terminal-input-row">
+                    <span aria-hidden="true">›</span>
+                    <input type="text" id="terminal-input" aria-label="Terminal command" autocomplete="off" spellcheck="false" placeholder="help">
+                </label>
+            </section>
+
+            <footer class="center-text">made with ❤️‍🔥 by colin</footer>
         </div>
     </body>
 </html>
