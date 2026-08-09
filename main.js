@@ -446,6 +446,11 @@ async function renderColoredAscii(canvas, imageUrl) {
   const sampleContext = sampleCanvas.getContext('2d', { willReadFrequently: true });
   sampleContext.drawImage(image, 0, 0, columns, rows);
   const pixels = sampleContext.getImageData(0, 0, columns, rows).data;
+  const lightness = new Float32Array(columns * rows);
+  for (let pixel = 0; pixel < lightness.length; pixel++) {
+    const color = pixel * 4;
+    lightness[pixel] = 0.2126 * pixels[color] + 0.7152 * pixels[color + 1] + 0.0722 * pixels[color + 2];
+  }
 
   canvas.width = columns * cellWidth * scale;
   canvas.height = rows * cellHeight * scale;
@@ -453,17 +458,29 @@ async function renderColoredAscii(canvas, imageUrl) {
   context.scale(scale, scale);
   context.font = '13px "VT323"';
   context.textBaseline = 'top';
-  // Every brightness level uses a visible ASCII character. A trailing space
-  // would discard the source color of bright pixels such as snow or white fur.
-  const ramp = '@%#*+=-:.,';
+  // Flat regions use a quiet dot. Sobel edge strength moves through this ramp
+  // from light punctuation to dense symbols while RGB always comes from the
+  // corresponding source pixel.
+  const edgeRamp = ':=-+*#%@';
   for (let row = 0; row < rows; row++) {
     for (let column = 0; column < columns; column++) {
       const pixel = (row * columns + column) * 4;
       const red = pixels[pixel];
       const green = pixels[pixel + 1];
       const blue = pixels[pixel + 2];
-      const light = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
-      const character = ramp[Math.min(ramp.length - 1, Math.floor(light / 256 * ramp.length))];
+      const left = Math.max(0, column - 1);
+      const right = Math.min(columns - 1, column + 1);
+      const top = Math.max(0, row - 1);
+      const bottom = Math.min(rows - 1, row + 1);
+      const gradientX = -lightness[top * columns + left] + lightness[top * columns + right]
+        - 2 * lightness[row * columns + left] + 2 * lightness[row * columns + right]
+        - lightness[bottom * columns + left] + lightness[bottom * columns + right];
+      const gradientY = -lightness[top * columns + left] - 2 * lightness[top * columns + column]
+        - lightness[top * columns + right] + lightness[bottom * columns + left]
+        + 2 * lightness[bottom * columns + column] + lightness[bottom * columns + right];
+      const edge = Math.hypot(gradientX, gradientY);
+      const edgeIndex = Math.min(edgeRamp.length - 1, Math.floor((edge - 32) / 420 * edgeRamp.length));
+      const character = edge > 32 ? edgeRamp[edgeIndex] : '.';
       context.fillStyle = `rgb(${red} ${green} ${blue})`;
       context.fillText(character, column * cellWidth, row * cellHeight);
     }
