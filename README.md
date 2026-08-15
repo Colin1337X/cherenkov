@@ -57,7 +57,7 @@ Short flags can be combined, so `rm -rf /folder/book` is the same as
 | `rmdir` | Removes an empty folder, book, or chapter; `-r`, `--recursive` includes its descendants; `-f`, `--force` suppresses missing-path errors. |
 | `generate` | `-m`, `--missing`; `-s`, `--stale`; `-f`, `--force`; `-n`, `--dry-run`. |
 | `neofetch` | `-a`, `--ascii` accepts `boykisser`, `cherenkov`, or `snep`. The flag is optional. |
-| `color` | Sets all regular terminal input and output to `cyan`, `blue`, `green`, `yellow`, `red`, `pink`, or `white`; `reset` restores cyan. |
+| `color` | Sets the entire site's color scheme to `cyan`, `blue`, `green`, `yellow`, `orange`, `red`, `pink`, `rose`, `purple`, `lime`, `teal`, or `white`; `reset` restores cyan. |
 
 `neofetch` renders each source photo as 128-by-60 ASCII using the original sampled RGB color for every character. Flat areas use quiet dots, while detected edges move through a progressively denser symbol ramp. The larger terminal is vertically resizable and also shows the current endpoint and model, viewport, browser storage usage and quota, story-record counts, the active path and generation parameters. Its median token rate uses generation samples recorded for the currently selected endpoint and model, so switching either one starts with no matching samples.
 
