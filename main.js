@@ -1142,7 +1142,11 @@ async function loadAllRecords(recordsDirectory) {
 
 async function deleteRecord(recordsDirectory, id) {
   try {
-    await (await getRecordHandle(recordsDirectory, id)).remove();
+    // OPFS deletes entries through their parent directory. File handles can
+    // read and write a record, but Chromium does not give them a remove()
+    // method, so asking the records directory to remove the filename keeps
+    // deletion compatible with the same API used to create these files.
+    await recordsDirectory.removeEntry(`${id}.json`);
   } catch (error) {
     if (error.name !== 'NotFoundError') throw error;
   }
