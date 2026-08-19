@@ -8,7 +8,7 @@ Generation streams OpenAI-compatible chat-completion deltas into the active edit
 
 Reasoning-capable providers can stream `reasoning_content`, `reasoning`, or `thinking` separately from story text. Generation settings offer an optional `reasoning_effort`; leaving it at provider default omits the field from the request.
 
-Creative controls inherit through `global defaults → folder → book → chapter → scene`. A record stores only the values edited at that level; reset removes its local overrides. Length, chaos, pacing, and tension range from `0.50x` to `1.50x`, with `1.00x` at the center. They multiply the base `max_tokens`, `temperature`, `top_p`, and `presence_penalty` values configured in generation settings. Dialogue share and prose notes remain prompt guidance.
+Creative controls inherit through `global defaults → folder → book → chapter → scene`. A record stores only the values edited at that level; reset removes its local overrides. Generation instructions follow the same rule, whether edited in the panel or supplied after a generate path. Length, chaos, pacing, and tension range from `0.50x` to `1.50x`, with `1.00x` at the center. They multiply the base `max_tokens`, `temperature`, `top_p`, and `presence_penalty` values configured in generation settings. Dialogue share and prose notes remain prompt guidance.
 
 Serve the directory over localhost so the browser can use Origin Private File System (OPFS):
 
@@ -35,6 +35,7 @@ rm -rf /folder/book
 rmdir /empty-folder
 rmdir -rf /folder/book
 generate /folder/book
+generate /folder/book "Resolve the rivalry during the storm"
 generate --missing /folder/book
 generate --dry-run --stale /folder/book
 neofetch --ascii boykisser
@@ -55,7 +56,7 @@ Short flags can be combined, so `rm -rf /folder/book` is the same as
 | `mv` | `-f`, `--force` replaces an existing destination of the same type. |
 | `rm` | `-r`, `--recursive` removes containers; `-f`, `--force` suppresses missing-path errors. |
 | `rmdir` | Removes an empty folder, book, or chapter; `-r`, `--recursive` includes its descendants; `-f`, `--force` suppresses missing-path errors. |
-| `generate` | `-m`, `--missing`; `-s`, `--stale`; `-f`, `--force`; `-n`, `--dry-run`. |
+| `generate [flags] [path] [instruction (optional)]` | Instructions are stored on that record and inherited by its children. Flags: `-m`, `--missing`; `-s`, `--stale`; `-f`, `--force`; `-n`, `--dry-run`. |
 | `neofetch` | `-a`, `--ascii` accepts `boykisser`, `cherenkov`, or `snep`. The flag is optional. |
 | `color` | Sets the entire site's color scheme to `cyan`, `blue`, `green`, `yellow`, `orange`, `red`, `pink`, `rose`, `purple`, `lime`, `teal`, or `white`; `reset` restores cyan. |
 

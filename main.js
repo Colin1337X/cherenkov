@@ -86,6 +86,7 @@ const creativeControlIds = [
   'chaos',
   'dialogue-share',
   'tension',
+  'generation-instructions',
   'premise-corehook',
   'style-guide',
   'world-rules-constraints',
@@ -155,7 +156,29 @@ async function executeCommand({ cmd, flags, args }) {
   // request begins. Filters can select missing or stale scenes, --dry-run only
   // prints the queue, and --force deliberately ignores the filters.
   if (cmd === 'generate' || cmd === 'gen' || cmd === 'g') {
-    const destination = resolvePath(inputdir || currentPath);
+    const target = findRecord(inputdir || currentPath);
+    const destination = target?.path || resolvePath(inputdir || currentPath);
+    const generationInstructions = args.slice(1).join(' ').trim();
+    if (generationInstructions && !target) {
+      printTerminal(`Cannot save generation instructions: ${destination}`, 'error');
+      return;
+    }
+    if (generationInstructions && !hasFlag(flags, '--dry-run', '-n')) {
+      // Command-line instructions are a normal local creative-control override.
+      // Saving them before the first request means interrupted multi-scene runs
+      // remain reproducible and descendants inherit the exact same direction.
+      target.creativeControls ||= {};
+      target.creativeControls['generation-instructions'] = generationInstructions;
+      target.updatedAt = new Date().toISOString();
+      await saveRecord(recordDirectory, target);
+      await refreshRecords();
+      if (currentRecord?.id === target.id) {
+        currentRecord = findRecord(target.id);
+        creativeOverrideIds.add('generation-instructions');
+        showCreativeControls(resolveCreativeControls(currentRecord), creativeOverrideIds);
+        setSaveStatus('saved');
+      }
+    }
     let scenes = getScenesUnder(destination);
     if (hasFlag(flags, '--force', '-f')) {
       // Force deliberately keeps the full queue, even when filter flags exist.
@@ -340,7 +363,7 @@ async function executeCommand({ cmd, flags, args }) {
       'mv [-f|--force] <source> <destination>\n' +
       'rm [-r|--recursive] [-f|--force] <path|id> (combined: -rf)\n' +
       'rmdir [-r|--recursive] [-f|--force] <path|id> (combined: -rf)\n' +
-      'generate [-m|--missing] [-s|--stale] [-f|--force] [-n|--dry-run] [path]\n' +
+      'generate [flags] [path] [instruction (optional)]\n' +
       'neofetch [-a|--ascii] [boykisser|cherenkov|snep]\n' +
       'color [cyan|blue|green|yellow|orange|red|pink|rose|purple|lime|teal|white|reset]\n' +
       'clear | help'
@@ -781,6 +804,7 @@ function resolveSceneContext(scene, controls = resolveCreativeControls(scene)) {
 // prompt guidance because the API has no direct equivalents for them.
 function getCreativeContext(values) {
   const notes = [
+    ['Generation instructions', values['generation-instructions']],
     ['Core hook', values['premise-corehook']],
     ['Style guide', values['style-guide']],
     ['World rules and constraints', values['world-rules-constraints']],
