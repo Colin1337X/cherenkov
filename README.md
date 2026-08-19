@@ -36,8 +36,12 @@ rmdir /empty-folder
 rmdir -rf /folder/book
 generate /folder/book
 generate /folder/book "Resolve the rivalry during the storm"
+generate -r /folder/book
 generate --missing /folder/book
 generate --dry-run --stale /folder/book
+tracker new /folder/book/chapter
+tracker show
+tracker clear
 neofetch --ascii boykisser
 neofetch --ascii cherenkov
 neofetch --ascii snep
@@ -56,13 +60,16 @@ Short flags can be combined, so `rm -rf /folder/book` is the same as
 | `mv` | `-f`, `--force` replaces an existing destination of the same type. |
 | `rm` | `-r`, `--recursive` removes containers; `-f`, `--force` suppresses missing-path errors. |
 | `rmdir` | Removes an empty folder, book, or chapter; `-r`, `--recursive` includes its descendants; `-f`, `--force` suppresses missing-path errors. |
-| `generate [flags] [path] [instruction (optional)]` | Instructions are stored on that record and inherited by its children. Flags: `-m`, `--missing`; `-s`, `--stale`; `-f`, `--force`; `-n`, `--dry-run`. |
+| `generate [flags] [path] [instruction (optional)]` | Instructions are stored on that record and inherited by its children. `-r`, `--recursive` asks the API to name generated descendant scenes; `-m`, `--missing`; `-s`, `--stale`; `-f`, `--force`; `-n`, `--dry-run`. |
+| `tracker` | `tracker new [path]` persists a folder, book, chapter, or scene scope; `tracker show` reports completion; `tracker clear` removes it. |
 | `neofetch` | `-a`, `--ascii` accepts `boykisser`, `cherenkov`, or `snep`. The flag is optional. |
 | `color` | Sets the entire site's color scheme to `cyan`, `blue`, `green`, `yellow`, `orange`, `red`, `pink`, `rose`, `purple`, `lime`, `teal`, or `white`; `reset` restores cyan. |
 
 `neofetch` renders each source photo as 128-by-60 ASCII using the original sampled RGB color for every character. Flat areas use quiet dots, while detected edges move through a progressively denser symbol ramp. The larger terminal is vertically resizable and also shows the current endpoint and model, viewport, browser storage usage and quota, story-record counts, the active path and generation parameters. Its median token rate uses generation samples recorded for the currently selected endpoint and model, so switching either one starts with no matching samples.
 
 Paths use the fixed hierarchy `/folder/book/chapter/scene`. OPFS stores each record as `/records/<immutable-id>.json`; moving a story node changes its virtual `path` and its descendants, not its storage filename.
+
+Recursive generation makes a second, small API request after each successful descendant scene. The response is converted into a filesystem-safe, unique slug and moved through the normal record path logic. Naming failures leave the generated scene at its existing path. The tracker stores only its selected scope; its complete, empty, stale, and active-generation counts are recalculated from current records so progress cannot drift from the story data.
 
 ## Architecture change
 
@@ -92,6 +99,8 @@ flowchart LR
         AAPI --> ASTREAM[Stream text and token rate]
         ASTREAM --> AEDITOR[Live editor reasoning and speed]
         ASTREAM --> ARECORDS
+        ARECORDS --> ANAME[Recursive API naming]
+        ARECORDS --> ATRACK[Scoped status tracker]
         ACMD --> ANEO[Colored neofetch renderer]
         ARECORDS --> ANEO
         ABROWSER[Storage quota and viewport] --> ANEO

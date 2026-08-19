@@ -8,6 +8,7 @@ async function init() {
     globalCreativeControls = getDefaultCreativeControls();
     setupCreativeControls();
     loadConfig();
+    trackerScope = localStorage.getItem('trackerScope') || '';
     setSiteColor(localStorage.getItem('siteColor') || localStorage.getItem('terminalColor') || 'cyan', false);
     showCreativeControls(globalCreativeControls);
     await getModels();
@@ -34,6 +35,8 @@ async function init() {
           console.error('Command failed:', error);
           printTerminal(`Error: ${error.message}`, 'error');
         } finally {
+          activeGenerationPath = '';
+          renderTracker();
           commandInput.disabled = false;
           setTerminalState('ready');
           commandInput.focus();
@@ -47,6 +50,7 @@ const mainEditor = document.getElementById("main-editor");
 const terminalOutput = document.getElementById("terminal-output");
 const currentPathElement = document.getElementById("current-path");
 const editorStatusElement = document.getElementById("editor-status");
+const trackerStatusElement = document.getElementById("tracker-status");
 const editorTitleElement = document.getElementById("editor-title");
 const saveStatusElement = document.getElementById("save-status");
 const tokenSpeedElement = document.getElementById("token-speed");
@@ -123,6 +127,8 @@ let currentPath = '/';
 let currentRecord = null;
 let globalCreativeControls = {};
 let creativeOverrideIds = new Set();
+let trackerScope = '';
+let activeGenerationPath = '';
 
 
 // Turn raw terminal text into one small command object. Flags are kept
@@ -180,6 +186,7 @@ async function executeCommand({ cmd, flags, args }) {
       }
     }
     let scenes = getScenesUnder(destination);
+    const autoName = hasFlag(flags, '--recursive', '-r') && target?.type !== 'scene';
     if (hasFlag(flags, '--force', '-f')) {
       // Force deliberately keeps the full queue, even when filter flags exist.
     } else if (hasFlag(flags, '--missing', '-m')) {
@@ -197,6 +204,8 @@ async function executeCommand({ cmd, flags, args }) {
     }
     for (const [index, record] of scenes.entries()) {
       printTerminal(`Generating ${index + 1}/${scenes.length}: ${record.path}`);
+      activeGenerationPath = record.path;
+      renderTracker();
       const controls = resolveCreativeControls(record);
       const params = getGenerationParams(controls);
       let streamedIntoEditor = false;
@@ -215,6 +224,8 @@ async function executeCommand({ cmd, flags, args }) {
         }
       });
       if (generation === null) {
+        activeGenerationPath = '';
+        renderTracker();
         setTokenSpeed(null);
         if (streamedIntoEditor) setSaveStatus('unsaved');
         printTerminal(`Generation failed: ${record.path}`, 'error');
@@ -236,9 +247,44 @@ async function executeCommand({ cmd, flags, args }) {
         setSaveStatus('saved');
       }
       setTokenSpeed(generation.metrics.tokensPerSecond);
+      if (autoName) {
+        try {
+          await autoNameGeneratedScene(record, generation.content);
+        } catch (error) {
+          console.error(`Failed to name ${record.path}:`, error);
+          printTerminal(`Kept ${record.path}: automatic naming failed (${error.message}).`, 'error');
+        }
+      }
     }
+    activeGenerationPath = '';
     await refreshRecords();
     printTerminal(`Generated ${scenes.length} scene${scenes.length === 1 ? '' : 's'}.`);
+    return;
+  }
+
+  if (cmd === 'tracker') {
+    const action = (inputdir || 'show').toLowerCase();
+    if (action === 'new') {
+      const scope = findRecord(outputdir || currentPath);
+      if (!scope) return printTerminal(`Tracker scope not found: ${outputdir || currentPath}`, 'error');
+      trackerScope = scope.path;
+      localStorage.setItem('trackerScope', trackerScope);
+      renderTracker();
+      printTerminal(formatTracker());
+      return;
+    }
+    if (action === 'clear' || action === 'remove' || action === 'rm') {
+      trackerScope = '';
+      localStorage.removeItem('trackerScope');
+      renderTracker();
+      printTerminal('Tracker cleared.');
+      return;
+    }
+    if (action === 'show' || action === 'status') {
+      printTerminal(formatTracker());
+      return;
+    }
+    printTerminal('Usage: tracker new [path] | tracker show | tracker clear', 'error');
     return;
   }
 
@@ -363,7 +409,8 @@ async function executeCommand({ cmd, flags, args }) {
       'mv [-f|--force] <source> <destination>\n' +
       'rm [-r|--recursive] [-f|--force] <path|id> (combined: -rf)\n' +
       'rmdir [-r|--recursive] [-f|--force] <path|id> (combined: -rf)\n' +
-      'generate [flags] [path] [instruction (optional)]\n' +
+      'generate [-r|--recursive] [-m|--missing] [-s|--stale] [-f|--force] [-n|--dry-run] [path] [instruction]\n' +
+      'tracker new [path] | tracker show | tracker clear\n' +
       'neofetch [-a|--ascii] [boykisser|cherenkov|snep]\n' +
       'color [cyan|blue|green|yellow|orange|red|pink|rose|purple|lime|teal|white|reset]\n' +
       'clear | help'
@@ -610,6 +657,39 @@ function renderUiState() {
   currentPathElement.textContent = currentPath;
   editorStatusElement.textContent = `${words} word${words === 1 ? '' : 's'} · ${text.length} character${text.length === 1 ? '' : 's'}`;
   editorTitleElement.textContent = currentRecord?.name || 'no scene loaded';
+  renderTracker();
+}
+
+// A tracker is only a persisted scope. Its numbers are derived from the live
+// records every time the UI changes, so moves, deletes, saves, and interrupted
+// generations cannot leave a separate progress database out of sync.
+function getTrackerStatus() {
+  if (!trackerScope) return null;
+  const scope = findRecord(trackerScope);
+  if (!scope) return { missing: true, path: trackerScope };
+  const scenes = getScenesUnder(scope.path);
+  const complete = scenes.filter(scene => scene.content?.trim()).length;
+  const stale = scenes.filter(scene => scene.stale === true).length;
+  return {
+    path: scope.path,
+    total: scenes.length,
+    complete,
+    empty: scenes.length - complete,
+    stale,
+    generating: Boolean(activeGenerationPath && (activeGenerationPath === scope.path || isPathInside(activeGenerationPath, scope.path)))
+  };
+}
+
+function formatTracker() {
+  const status = getTrackerStatus();
+  if (!status) return 'No tracker. Use tracker new [path].';
+  if (status.missing) return `Tracker scope is missing: ${status.path}`;
+  return `Tracker ${status.path}: ${status.complete}/${status.total} complete · ${status.empty} empty · ${status.stale} stale${status.generating ? ' · generating' : ''}`;
+}
+
+function renderTracker() {
+  trackerStatusElement.hidden = !trackerScope;
+  trackerStatusElement.textContent = trackerScope ? formatTracker() : '';
 }
 
 function setSaveStatus(status) {
@@ -855,6 +935,7 @@ async function refreshRecords() {
     .sort((a, b) => (a.path || a.id).localeCompare(b.path || b.id))
     .map(formatRecord)
     .join('\n') || 'no records yet';
+  renderTracker();
 }
 
 // New records use one consistent shape. The path depth supplies the node type,
@@ -894,6 +975,51 @@ async function createRecord(path, requestedType) {
     setSaveStatus('saved');
   }
   printTerminal(`Created ${type}: ${path}`);
+}
+
+// Recursive generation gives each completed scene a content-based name. The
+// model only proposes a short title; this client converts it to a safe slug,
+// avoids sibling collisions, and uses the normal move path so IDs and links
+// remain stable. A naming failure never discards successful story generation.
+async function autoNameGeneratedScene(record, content) {
+  const endpoint = endpointInput.value.replace(/\/$/, '');
+  const response = await fetch(`${endpoint}/chat/completions`, {
+    method: 'POST',
+    headers: apiHeaders(),
+    body: JSON.stringify({
+      model: modelInput.value,
+      max_tokens: 32,
+      temperature: 0.2,
+      stream: false,
+      messages: [
+        { role: 'system', content: 'Name this story scene. Reply with only a concise title of two to six words.' },
+        { role: 'user', content: String(content || '').slice(0, 8000) }
+      ]
+    })
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error?.message || `HTTP ${response.status}`);
+  }
+  const output = await response.json();
+  const proposed = output?.choices?.[0]?.message?.content;
+  const title = Array.isArray(proposed)
+    ? proposed.map(part => part?.text || part?.content || '').join(' ')
+    : String(proposed || '');
+  if (!title.trim()) throw new Error('the naming response was empty');
+  const slug = title.normalize('NFKD').toLowerCase()
+    .replace(/[’']/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 64);
+  if (!slug) throw new Error('the naming response had no usable title');
+  let path = `${record.parentPath}/${slug}`;
+  for (let suffix = 2; findRecord(path) && path !== record.path; suffix++) {
+    path = `${record.parentPath}/${slug}-${suffix}`;
+  }
+  if (path === record.path) return;
+  const previousPath = record.path;
+  if (await moveRecord(previousPath, path, false)) printTerminal(`Named ${previousPath} → ${path}.`);
 }
 
 // Stream one OpenAI-compatible chat completion. Providers that ignore stream
@@ -1144,6 +1270,10 @@ async function moveRecord(sourcePath, newPath, force) {
   }
   if (currentPath === sourcePath || isPathInside(currentPath, sourcePath)) {
     currentPath = newPath + currentPath.slice(sourcePath.length);
+  }
+  if (trackerScope === sourcePath || isPathInside(trackerScope, sourcePath)) {
+    trackerScope = newPath + trackerScope.slice(sourcePath.length);
+    localStorage.setItem('trackerScope', trackerScope);
   }
   await refreshRecords();
   currentRecord = currentRecord ? recordArray.find(item => item.id === currentRecord.id) : null;
