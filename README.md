@@ -39,9 +39,9 @@ generate /folder/book "Resolve the rivalry during the storm"
 generate -r /folder/book
 generate --missing /folder/book
 generate --dry-run --stale /folder/book
-tracker new /folder/book/chapter
+tracker new revision-state /folder/book/chapter
 tracker show
-tracker clear
+tracker delete revision-state
 neofetch --ascii boykisser
 neofetch --ascii cherenkov
 neofetch --ascii snep
@@ -61,7 +61,7 @@ Short flags can be combined, so `rm -rf /folder/book` is the same as
 | `rm` | `-r`, `--recursive` removes containers; `-f`, `--force` suppresses missing-path errors. |
 | `rmdir` | Removes an empty folder, book, or chapter; `-r`, `--recursive` includes its descendants; `-f`, `--force` suppresses missing-path errors. |
 | `generate [flags] [path] [instruction (optional)]` | Instructions are stored on that record and inherited by its children. `-r`, `--recursive` asks the API to name generated descendant scenes; `-m`, `--missing`; `-s`, `--stale`; `-f`, `--force`; `-n`, `--dry-run`. |
-| `tracker` | `tracker new [path]` persists a folder, book, chapter, or scene scope; `tracker show` reports completion; `tracker clear` removes it. |
+| `tracker` | `tracker new <name> [path]` creates or reopens a named tracker in that domain; `tracker show` lists coverage; `tracker delete <name>` and `tracker rm <name>` delete it. |
 | `neofetch` | `-a`, `--ascii` accepts `boykisser`, `cherenkov`, or `snep`. The flag is optional. |
 | `color` | Sets the entire site's color scheme to `cyan`, `blue`, `green`, `yellow`, `orange`, `red`, `pink`, `rose`, `purple`, `lime`, `teal`, or `white`; `reset` restores cyan. |
 
@@ -69,7 +69,9 @@ Short flags can be combined, so `rm -rf /folder/book` is the same as
 
 Paths use the fixed hierarchy `/folder/book/chapter/scene`. OPFS stores each record as `/records/<immutable-id>.json`; moving a story node changes its virtual `path` and its descendants, not its storage filename.
 
-Recursive generation makes a second, small API request after each successful descendant scene. The response is converted into a filesystem-safe, unique slug and moved through the normal record path logic. Naming failures leave the generated scene at its existing path. The tracker stores only its selected scope; its complete, empty, stale, and active-generation counts are recalculated from current records so progress cannot drift from the story data.
+Recursive generation makes a second, small API request after each successful descendant scene. The response is converted into a filesystem-safe, unique slug and moved through the normal record path logic. Naming failures leave the generated scene at its existing path.
+
+Trackers are named, scoped text fields. A tracker rooted at a chapter appears in Creative Controls for that chapter and its scenes, but not elsewhere. Definitions store only the tracker name and domain; the entered text is stored on each folder, book, chapter, or scene record. Deleting a tracker removes its definition and its values from every record.
 
 ## Architecture change
 

@@ -8,7 +8,7 @@ async function init() {
     globalCreativeControls = getDefaultCreativeControls();
     setupCreativeControls();
     loadConfig();
-    trackerScope = localStorage.getItem('trackerScope') || '';
+    trackerDefinitions = loadTrackerDefinitions();
     setSiteColor(localStorage.getItem('siteColor') || localStorage.getItem('terminalColor') || 'cyan', false);
     showCreativeControls(globalCreativeControls);
     await getModels();
@@ -35,7 +35,6 @@ async function init() {
           console.error('Command failed:', error);
           printTerminal(`Error: ${error.message}`, 'error');
         } finally {
-          activeGenerationPath = '';
           renderTracker();
           commandInput.disabled = false;
           setTerminalState('ready');
@@ -51,6 +50,7 @@ const terminalOutput = document.getElementById("terminal-output");
 const currentPathElement = document.getElementById("current-path");
 const editorStatusElement = document.getElementById("editor-status");
 const trackerStatusElement = document.getElementById("tracker-status");
+const trackerControlsElement = document.getElementById("tracker-controls");
 const editorTitleElement = document.getElementById("editor-title");
 const saveStatusElement = document.getElementById("save-status");
 const tokenSpeedElement = document.getElementById("token-speed");
@@ -127,8 +127,7 @@ let currentPath = '/';
 let currentRecord = null;
 let globalCreativeControls = {};
 let creativeOverrideIds = new Set();
-let trackerScope = '';
-let activeGenerationPath = '';
+let trackerDefinitions = [];
 
 
 // Turn raw terminal text into one small command object. Flags are kept
@@ -204,7 +203,6 @@ async function executeCommand({ cmd, flags, args }) {
     }
     for (const [index, record] of scenes.entries()) {
       printTerminal(`Generating ${index + 1}/${scenes.length}: ${record.path}`);
-      activeGenerationPath = record.path;
       renderTracker();
       const controls = resolveCreativeControls(record);
       const params = getGenerationParams(controls);
@@ -224,7 +222,6 @@ async function executeCommand({ cmd, flags, args }) {
         }
       });
       if (generation === null) {
-        activeGenerationPath = '';
         renderTracker();
         setTokenSpeed(null);
         if (streamedIntoEditor) setSaveStatus('unsaved');
@@ -256,7 +253,6 @@ async function executeCommand({ cmd, flags, args }) {
         }
       }
     }
-    activeGenerationPath = '';
     await refreshRecords();
     printTerminal(`Generated ${scenes.length} scene${scenes.length === 1 ? '' : 's'}.`);
     return;
@@ -265,26 +261,37 @@ async function executeCommand({ cmd, flags, args }) {
   if (cmd === 'tracker') {
     const action = (inputdir || 'show').toLowerCase();
     if (action === 'new') {
-      const scope = findRecord(outputdir || currentPath);
-      if (!scope) return printTerminal(`Tracker scope not found: ${outputdir || currentPath}`, 'error');
-      trackerScope = scope.path;
-      localStorage.setItem('trackerScope', trackerScope);
+      const name = outputdir;
+      const scope = findRecord(args[2] || currentPath);
+      if (!name) return printTerminal('Usage: tracker new <name> [path]', 'error');
+      if (!scope) return printTerminal(`Tracker scope not found: ${args[2] || currentPath}`, 'error');
+      const existing = trackerDefinitions.find(tracker => tracker.name === name);
+      if (existing) existing.path = scope.path;
+      else trackerDefinitions.push({ name, path: scope.path });
+      saveTrackerDefinitions();
       renderTracker();
-      printTerminal(formatTracker());
+      printTerminal(`${existing ? 'Opened' : 'Created'} tracker ${name} in ${scope.path}.`);
       return;
     }
-    if (action === 'clear' || action === 'remove' || action === 'rm') {
-      trackerScope = '';
-      localStorage.removeItem('trackerScope');
-      renderTracker();
-      printTerminal('Tracker cleared.');
+    if (action === 'delete' || action === 'rm') {
+      const name = outputdir;
+      const tracker = trackerDefinitions.find(item => item.name === name);
+      if (!tracker) return printTerminal(`Tracker not found: ${name || ''}`, 'error');
+      trackerDefinitions = trackerDefinitions.filter(item => item.name !== name);
+      saveTrackerDefinitions();
+      for (const record of recordArray.filter(item => Object.hasOwn(item.trackers || {}, name))) {
+        delete record.trackers[name];
+        await saveRecord(recordDirectory, record);
+      }
+      await refreshRecords();
+      printTerminal(`Deleted tracker ${name}.`);
       return;
     }
     if (action === 'show' || action === 'status') {
       printTerminal(formatTracker());
       return;
     }
-    printTerminal('Usage: tracker new [path] | tracker show | tracker clear', 'error');
+    printTerminal('Usage: tracker new <name> [path] | tracker show | tracker delete <name>', 'error');
     return;
   }
 
@@ -410,7 +417,7 @@ async function executeCommand({ cmd, flags, args }) {
       'rm [-r|--recursive] [-f|--force] <path|id> (combined: -rf)\n' +
       'rmdir [-r|--recursive] [-f|--force] <path|id> (combined: -rf)\n' +
       'generate [-r|--recursive] [-m|--missing] [-s|--stale] [-f|--force] [-n|--dry-run] [path] [instruction]\n' +
-      'tracker new [path] | tracker show | tracker clear\n' +
+      'tracker new <name> [path] | tracker show | tracker delete|rm <name>\n' +
       'neofetch [-a|--ascii] [boykisser|cherenkov|snep]\n' +
       'color [cyan|blue|green|yellow|orange|red|pink|rose|purple|lime|teal|white|reset]\n' +
       'clear | help'
@@ -660,36 +667,58 @@ function renderUiState() {
   renderTracker();
 }
 
-// A tracker is only a persisted scope. Its numbers are derived from the live
-// records every time the UI changes, so moves, deletes, saves, and interrupted
-// generations cannot leave a separate progress database out of sync.
-function getTrackerStatus() {
-  if (!trackerScope) return null;
-  const scope = findRecord(trackerScope);
-  if (!scope) return { missing: true, path: trackerScope };
-  const scenes = getScenesUnder(scope.path);
-  const complete = scenes.filter(scene => scene.content?.trim()).length;
-  const stale = scenes.filter(scene => scene.stale === true).length;
-  return {
-    path: scope.path,
-    total: scenes.length,
-    complete,
-    empty: scenes.length - complete,
-    stale,
-    generating: Boolean(activeGenerationPath && (activeGenerationPath === scope.path || isPathInside(activeGenerationPath, scope.path)))
-  };
+// Tracker definitions are small UI preferences. Their text values live on the
+// story records themselves, so exported or moved records retain their status.
+function loadTrackerDefinitions() {
+  try {
+    const value = JSON.parse(localStorage.getItem('trackers'));
+    if (Array.isArray(value)) return value.filter(item => item?.name && item?.path);
+    const oldScope = localStorage.getItem('trackerScope');
+    if (!oldScope) return [];
+    const migrated = [{ name: 'status', path: oldScope }];
+    localStorage.setItem('trackers', JSON.stringify(migrated));
+    localStorage.removeItem('trackerScope');
+    return migrated;
+  } catch {
+    return [];
+  }
+}
+
+function saveTrackerDefinitions() {
+  localStorage.setItem('trackers', JSON.stringify(trackerDefinitions));
+}
+
+function getApplicableTrackers(path = currentPath) {
+  return trackerDefinitions.filter(tracker => path === tracker.path || isPathInside(path, tracker.path));
 }
 
 function formatTracker() {
-  const status = getTrackerStatus();
-  if (!status) return 'No tracker. Use tracker new [path].';
-  if (status.missing) return `Tracker scope is missing: ${status.path}`;
-  return `Tracker ${status.path}: ${status.complete}/${status.total} complete · ${status.empty} empty · ${status.stale} stale${status.generating ? ' · generating' : ''}`;
+  if (!trackerDefinitions.length) return 'No trackers. Use tracker new <name> [path].';
+  return trackerDefinitions.map(tracker => {
+    const records = recordArray.filter(record => record.path === tracker.path || isPathInside(record.path, tracker.path));
+    const filled = records.filter(record => record.trackers?.[tracker.name]?.trim()).length;
+    return `${tracker.name} ${tracker.path}: ${filled}/${records.length} filled`;
+  }).join('\n');
 }
 
 function renderTracker() {
-  trackerStatusElement.hidden = !trackerScope;
-  trackerStatusElement.textContent = trackerScope ? formatTracker() : '';
+  const trackers = getApplicableTrackers();
+  const record = currentRecord?.path === currentPath ? currentRecord : findRecord(currentPath);
+  trackerStatusElement.hidden = !trackers.length;
+  trackerStatusElement.textContent = trackers.length ? `trackers: ${trackers.map(item => item.name).join(', ')}` : '';
+  trackerControlsElement.replaceChildren(...trackers.map(tracker => {
+    const label = document.createElement('label');
+    label.textContent = tracker.name;
+    const field = document.createElement('textarea');
+    field.className = 'text-area-small';
+    field.dataset.tracker = tracker.name;
+    field.placeholder = `Status for ${tracker.name}`;
+    field.value = record?.trackers?.[tracker.name] || '';
+    field.disabled = !record;
+    label.appendChild(field);
+    return label;
+  }));
+  trackerControlsElement.hidden = !trackers.length;
 }
 
 function setSaveStatus(status) {
@@ -731,6 +760,7 @@ function setTerminalState(status) {
 function setupCreativeControls() {
   const panel = document.getElementById('creative-controls');
   panel.addEventListener('input', handleCreativeInput);
+  panel.addEventListener('change', saveTrackerInput);
 }
 
 function updateSlider(slider) {
@@ -763,6 +793,15 @@ function showCreativeControls(values, localIds = new Set()) {
 
 function handleCreativeInput(event) {
   const control = event.target;
+  if (control.dataset.tracker) {
+    const record = currentRecord?.path === currentPath ? currentRecord : findRecord(currentPath);
+    if (!record) return;
+    record.trackers ||= {};
+    record.trackers[control.dataset.tracker] = control.value;
+    setSaveStatus('unsaved');
+    setTerminalState('tracker changed');
+    return;
+  }
   if (!creativeControlIds.includes(control.id)) return;
   if (control.matches('input[type="range"]')) updateSlider(control);
   if (currentRecord) {
@@ -774,6 +813,21 @@ function handleCreativeInput(event) {
     globalCreativeControls[control.id] = control.value;
   }
   setTerminalState('controls changed');
+}
+
+async function saveTrackerInput(event) {
+  const name = event.target.dataset.tracker;
+  if (!name) return;
+  const record = currentRecord?.path === currentPath ? currentRecord : findRecord(currentPath);
+  if (!record) return;
+  record.trackers ||= {};
+  record.trackers[name] = event.target.value;
+  record.updatedAt = new Date().toISOString();
+  await saveRecord(recordDirectory, record);
+  await refreshRecords();
+  if (currentRecord?.id === record.id) currentRecord = findRecord(record.id);
+  setSaveStatus('saved');
+  setTerminalState('tracker saved');
 }
 
 function resetCreativeControls() {
@@ -959,6 +1013,7 @@ async function createRecord(path, requestedType) {
     premise: '',
     content: '',
     creativeControls: {},
+    trackers: {},
     createdAt: now,
     updatedAt: now
   };
@@ -1271,10 +1326,12 @@ async function moveRecord(sourcePath, newPath, force) {
   if (currentPath === sourcePath || isPathInside(currentPath, sourcePath)) {
     currentPath = newPath + currentPath.slice(sourcePath.length);
   }
-  if (trackerScope === sourcePath || isPathInside(trackerScope, sourcePath)) {
-    trackerScope = newPath + trackerScope.slice(sourcePath.length);
-    localStorage.setItem('trackerScope', trackerScope);
+  for (const tracker of trackerDefinitions) {
+    if (tracker.path === sourcePath || isPathInside(tracker.path, sourcePath)) {
+      tracker.path = newPath + tracker.path.slice(sourcePath.length);
+    }
   }
+  saveTrackerDefinitions();
   await refreshRecords();
   currentRecord = currentRecord ? recordArray.find(item => item.id === currentRecord.id) : null;
   if (currentRecord) setSaveStatus('saved');
