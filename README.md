@@ -63,7 +63,7 @@ Short flags can be combined, so `rm -rf /folder/book` is the same as
 | `generate [flags] [path] [instruction (optional)]` | Instructions are stored on that record and inherited by its children. `-r`, `--recursive` asks the API to name generated descendant scenes; `-m`, `--missing`; `-s`, `--stale`; `-f`, `--force`; `-n`, `--dry-run`. |
 | `tracker` | `tracker new <name> [path]` creates or reopens a named tracker in that domain; `tracker show` lists coverage; `tracker delete <name>` and `tracker rm <name>` delete it. |
 | `neofetch` | `-a`, `--ascii` accepts `boykisser`, `cherenkov`, or `snep`. The flag is optional. |
-| `color` | Sets the entire site's color scheme to `cyan`, `blue`, `green`, `yellow`, `orange`, `red`, `pink`, `rose`, `purple`, `lime`, `teal`, or `white`; `reset` restores cyan. |
+| `color` | Sets the entire site's persistent color scheme. Run it without an argument to list the palette, choose a named color, use a custom six-digit hex color such as `color #7dd3fc`, or use `reset` to restore cyan. |
 
 `neofetch` renders each source photo as 128-by-60 ASCII using the original sampled RGB color for every character. Flat areas use quiet dots, while detected edges move through a progressively denser symbol ramp. The larger terminal is vertically resizable and also shows the current endpoint and model, viewport, browser storage usage and quota, story-record counts, the active path and generation parameters. Its median token rate uses generation samples recorded for the currently selected endpoint and model, so switching either one starts with no matching samples.
 

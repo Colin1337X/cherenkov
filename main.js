@@ -105,16 +105,28 @@ const neofetchArt = {
 };
 const siteColors = {
   cyan: '#0187e0',
+  aqua: '#22d3ee',
+  sky: '#38bdf8',
   blue: '#6d8cff',
+  navy: '#4f6fdc',
+  indigo: '#818cf8',
+  violet: '#a78bfa',
   green: '#77e8b5',
+  emerald: '#34d399',
+  mint: '#6ee7b7',
   yellow: '#ffd36d',
+  amber: '#fbbf24',
+  gold: '#facc15',
   orange: '#ffad5c',
+  coral: '#fb7185',
   red: '#ff7890',
   pink: '#ff86d3',
   rose: '#fb7185',
+  magenta: '#e879f9',
   purple: '#b99cff',
   lime: '#b8f36b',
   teal: '#5eead4',
+  silver: '#cbd5e1',
   white: '#e8f7ff'
 };
 
@@ -397,7 +409,11 @@ async function executeCommand({ cmd, flags, args }) {
   }
 
   if (cmd === 'color') {
-    setSiteColor(inputdir || 'reset');
+    if (!inputdir) {
+      printTerminal(`Colors: ${Object.keys(siteColors).join(', ')}\nUse color <name>, color #RRGGBB, or color reset.`);
+      return;
+    }
+    setSiteColor(inputdir);
     return;
   }
 
@@ -419,7 +435,7 @@ async function executeCommand({ cmd, flags, args }) {
       'generate [-r|--recursive] [-m|--missing] [-s|--stale] [-f|--force] [-n|--dry-run] [path] [instruction]\n' +
       'tracker new <name> [path] | tracker show | tracker delete|rm <name>\n' +
       'neofetch [-a|--ascii] [boykisser|cherenkov|snep]\n' +
-      'color [cyan|blue|green|yellow|orange|red|pink|rose|purple|lime|teal|white|reset]\n' +
+      `color <name|#RRGGBB|reset> (${Object.keys(siteColors).join(', ')})\n` +
       'clear | help'
     );
     return;
@@ -486,15 +502,18 @@ function printTerminal(message, tone = '') {
 // terminal colors from one CSS variable. Saving the name makes the selected
 // site theme survive a reload while the old key keeps existing users' choice.
 function setSiteColor(name, announce = true) {
-  const normalized = name.toLowerCase();
-  const color = normalized === 'reset' ? siteColors.cyan : siteColors[normalized];
+  const normalized = String(name).trim().toLowerCase();
+  const customColor = /^#[\da-f]{6}$/i.test(normalized) ? normalized : '';
+  const color = normalized === 'reset' ? siteColors.cyan : (siteColors[normalized] || customColor);
   if (!color) {
-    if (announce) printTerminal(`Unknown color: ${name}`, 'error');
+    if (announce) printTerminal(`Unknown color: ${name}\nRun color to see the palette, or use a six-digit hex color such as #7dd3fc.`, 'error');
     return;
   }
   document.documentElement.style.setProperty('--accent', color);
+  document.documentElement.dataset.siteColor = normalized === 'reset' ? 'cyan' : normalized;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', color);
   localStorage.setItem('siteColor', normalized === 'reset' ? 'cyan' : normalized);
-  if (announce) printTerminal(`Site color: ${normalized}`, 'success');
+  if (announce) printTerminal(`Site color: ${normalized === 'reset' ? 'cyan' : normalized}`, 'success');
 }
 
 // Neofetch reads live browser information and only compares generation speed

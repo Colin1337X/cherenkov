@@ -26,12 +26,19 @@
   --muted: color-mix(in srgb, var(--accent) 58%, #738087);
   --glow: color-mix(in srgb, var(--accent) 28%, transparent);
   --terminal-color: var(--accent);
+  --state-highlight: color-mix(in srgb, var(--accent) 82%, white);
   --radius: 18px;
   --gap: clamp(12px, 1.4vw, 22px);
 }
 
 * {
   box-sizing: border-box;
+  accent-color: var(--accent);
+}
+
+::selection {
+  color: var(--background);
+  background: var(--accent);
 }
 
 html {
@@ -277,9 +284,9 @@ textarea::placeholder {
 }
 
 .status-pill[data-state="unsaved"] {
-  border-color: rgba(255, 178, 76, 0.5);
-  color: #ffc879;
-  background: rgba(255, 153, 0, 0.08);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  color: var(--state-highlight);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .status-pill[data-state="saved"] {
@@ -648,18 +655,21 @@ textarea::placeholder {
 }
 
 textarea,
-.text {
+.text,
+.terminal-output {
   scrollbar-width: thin;
   scrollbar-color: var(--accent) transparent;
 }
 
 textarea::-webkit-scrollbar,
-.text::-webkit-scrollbar {
+.text::-webkit-scrollbar,
+.terminal-output::-webkit-scrollbar {
   width: 8px;
 }
 
 textarea::-webkit-scrollbar-thumb,
-.text::-webkit-scrollbar-thumb {
+.text::-webkit-scrollbar-thumb,
+.terminal-output::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: color-mix(in srgb, var(--accent) 66%, transparent);
 }
