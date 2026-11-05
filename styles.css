@@ -654,6 +654,12 @@ textarea::placeholder {
   letter-spacing: 0.08em;
 }
 
+.data-tools {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
 textarea,
 .text,
 .terminal-output {

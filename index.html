@@ -67,7 +67,7 @@
                                 <input type="range" class="slider" id="length" min="0" max="100" value="55" data-default="55">
                             </label>
                             <label class="range-control" for="pacing">
-                                <span>pacing <output data-value-for="pacing">1.00×</output></span>
+                                <span>pacing <output data-value-for="pacing">moderate</output></span>
                                 <input type="range" class="slider" id="pacing" min="0" max="100" value="50" data-default="50">
                             </label>
                             <label class="range-control" for="chaos">
@@ -82,10 +82,19 @@
                                 <span>tension <output data-value-for="tension">1.10×</output></span>
                                 <input type="range" class="slider" id="tension" min="0" max="100" value="60" data-default="60">
                             </label>
+                            <label class="range-control context-scope-control" for="context-scope">
+                                <span>story context <output data-value-for="context-scope">current book</output></span>
+                                <input type="range" class="slider" id="context-scope" min="0" max="5" step="1" value="2" data-default="2" list="context-scope-options">
+                                <datalist id="context-scope-options">
+                                    <option value="0" label="workspace"></option><option value="1" label="folder"></option><option value="2" label="book"></option>
+                                    <option value="3" label="chapter"></option><option value="4" label="previous"></option><option value="5" label="none"></option>
+                                </datalist>
+                            </label>
                         </div>
 
                         <div class="context-grid">
                             <label>generation instructions<textarea class="text-area-small" id="generation-instructions" placeholder="What should happen in generated scenes?"></textarea></label>
+                            <label>custom context sources<textarea class="text-area-small" id="custom-context-sources" placeholder="Paste notes, paths, excerpts, or any extra context to include"></textarea></label>
                             <label>core hook<textarea class="text-area-small" id="premise-corehook" placeholder="What makes this story matter?"></textarea></label>
                             <label>style guide<textarea class="text-area-small" id="style-guide" placeholder="Voice, tense, tone, and prose rules"></textarea></label>
                             <label>world rules<textarea class="text-area-small" id="world-rules-constraints" placeholder="Constraints the story must obey"></textarea></label>
@@ -139,10 +148,15 @@
                 <div class="terminal-output" id="terminal-output" role="log" aria-live="polite" aria-label="Terminal output"></div>
                 <label class="terminal-input-row">
                     <span aria-hidden="true">›</span>
-                    <input type="text" id="terminal-input" aria-label="Terminal command" autocomplete="off" spellcheck="false" placeholder="help">
+                    <input type="text" id="terminal-input" aria-label="Terminal command. Up and Down for history, Tab to autocomplete." title="Up/Down: history · Tab: autocomplete · Shift+Tab: move focus" autocomplete="off" spellcheck="false" placeholder="help · ↑↓ history · Tab complete">
                 </label>
             </section>
 
+            <section class="data-tools" aria-label="User data">
+                <button class="quiet-button" id="import-data-button" type="button">import data</button>
+                <button class="quiet-button" id="export-data-button" type="button">export data</button>
+                <input id="import-data-input" type="file" accept="application/json,.json" hidden>
+            </section>
             <footer class="center-text">made with ❤️‍🔥 by colin</footer>
         </div>
     </body>

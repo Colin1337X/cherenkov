@@ -21,11 +21,34 @@ async function init() {
       renderUiState();
     });
     resetCreativeControlsButton.addEventListener('click', resetCreativeControls);
+    exportDataButton.addEventListener('click', exportUserData);
+    importDataButton.addEventListener('click', () => importDataInput.click());
+    importDataInput.addEventListener('change', importUserData);
     commandInput.addEventListener('keydown', async (event) => {
+      if (event.isComposing || event.keyCode === 229) return;
+      if (event.ctrlKey && event.key.toLowerCase() === 'l') {
+        event.preventDefault();
+        terminalOutput.replaceChildren();
+        return;
+      }
+      if (event.key === 'Tab' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
+        event.preventDefault();
+        completeTerminalInput();
+        return;
+      }
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        event.preventDefault();
+        navigateCommandHistory(event.key === 'ArrowUp' ? -1 : 1);
+        return;
+      }
       if (event.key === 'Enter') {
         event.preventDefault();
         const command = commandInput.value.trim();
         if (!command) return;
+        commandHistory.push(command);
+        commandHistoryIndex = commandHistory.length;
+        commandHistoryDraft = '';
+        printTerminal(`${currentPath} $ ${command}`, 'command');
         commandInput.value = '';
         commandInput.disabled = true;
         setTerminalState('working');
@@ -66,6 +89,9 @@ const systemPromptInput = document.getElementById("system-prompt");
 const availableModelsSelect = document.getElementById("available-models");
 const saveConfigButton = document.getElementById("save-config-button");
 const getModelsButton = document.getElementById("get-models-button");
+const exportDataButton = document.getElementById('export-data-button');
+const importDataButton = document.getElementById('import-data-button');
+const importDataInput = document.getElementById('import-data-input');
 const generationBaseDefaults = {
   max_tokens: 2048,
   temperature: 0.8,
@@ -80,7 +106,6 @@ const generationBaseInputs = {
 };
 const generationControlParameters = {
   length: 'max_tokens',
-  pacing: 'top_p',
   chaos: 'temperature',
   tension: 'presence_penalty'
 };
@@ -90,7 +115,9 @@ const creativeControlIds = [
   'chaos',
   'dialogue-share',
   'tension',
+  'context-scope',
   'generation-instructions',
+  'custom-context-sources',
   'premise-corehook',
   'style-guide',
   'world-rules-constraints',
@@ -140,6 +167,84 @@ let currentRecord = null;
 let globalCreativeControls = {};
 let creativeOverrideIds = new Set();
 let trackerDefinitions = [];
+let batchLoadedScenes = [];
+const commandHistory = [];
+let commandHistoryIndex = 0;
+let commandHistoryDraft = '';
+
+function navigateCommandHistory(direction) {
+  if (!commandHistory.length) return;
+  if (commandHistoryIndex === commandHistory.length) commandHistoryDraft = commandInput.value;
+  commandHistoryIndex = Math.max(0, Math.min(commandHistory.length, commandHistoryIndex + direction));
+  commandInput.value = commandHistoryIndex === commandHistory.length ? commandHistoryDraft : commandHistory[commandHistoryIndex];
+  commandInput.setSelectionRange(commandInput.value.length, commandInput.value.length);
+}
+
+function completeTerminalInput() {
+  if (commandInput.selectionStart !== commandInput.selectionEnd) return;
+  const cursor = commandInput.selectionStart;
+  const beforeCursor = commandInput.value.slice(0, cursor);
+  // Keep quoted paths together, including a quote that is still being typed.
+  const parts = [...beforeCursor.matchAll(/"[^"]*"?|'[^']*'?|[^\s]+/g)];
+  const last = parts.at(-1);
+  const active = last && last.index + last[0].length === cursor ? last : null;
+  const raw = active?.[0] || '';
+  const start = active?.index ?? cursor;
+  const quote = /^["']/.test(raw) ? raw[0] : '';
+  const token = quote ? raw.slice(1).replace(new RegExp(`${quote}$`), '') : raw;
+  const previous = parts.slice(0, active ? -1 : undefined).map(part => part[0].replace(/^(["'])(.*)\1$/, '$2'));
+  const cmd = previous[0]?.toLowerCase();
+  const args = previous.slice(1).filter(part => !part.startsWith('-'));
+  const commandNames = ['cd', 'clear', 'color', 'generate', 'help', 'load', 'ls', 'mkdir', 'mv', 'neofetch', 'pwd', 'rm', 'rmdir', 'save', 'touch', 'tracker'];
+  const flags = {
+    ls: ['-r', '--recursive'], mkdir: ['-p', '--parents'], mv: ['-f', '--force'],
+    rm: ['-r', '--recursive', '-f', '--force'], rmdir: ['-r', '--recursive', '-f', '--force'],
+    generate: ['-r', '--recursive', '-m', '--missing', '-s', '--stale', '-f', '--force', '-n', '--dry-run'],
+    neofetch: ['-a', '--ascii']
+  };
+  let candidates = [];
+  if (!previous.length) candidates = commandNames;
+  else if (token.startsWith('-')) candidates = flags[cmd] || [];
+  else if (cmd === 'color' && !args.length) candidates = [...Object.keys(siteColors), 'reset'];
+  else if (['neofetch', 'neo'].includes(cmd) && !args.length) candidates = Object.keys(neofetchArt);
+  else if (cmd === 'tracker' && !args.length) candidates = ['new', 'show', 'delete', 'rm'];
+  else if (cmd === 'tracker' && ['delete', 'rm'].includes(args[0]) && args.length === 1) {
+    candidates = trackerDefinitions.map(tracker => tracker.name);
+  } else if (
+    (['cd', 'load', 'ls', 'mkdir', 'rm', 'rmdir', 'touch', 'generate', 'gen', 'g'].includes(cmd) && !args.length) ||
+    (['mv', 'move'].includes(cmd) && args.length < 2) ||
+    (cmd === 'tracker' && args[0] === 'new' && args.length === 2)
+  ) {
+    const slash = token.lastIndexOf('/');
+    const prefix = token.slice(0, slash + 1);
+    const parent = resolvePath(prefix || '.');
+    candidates = recordArray.filter(record => record.parentPath === parent)
+      .map(record => prefix + record.path.split('/').at(-1) + (record.type === 'scene' ? '' : '/'));
+  }
+  const matches = [...new Set(candidates)].filter(candidate => candidate.startsWith(token)).sort();
+  if (!matches.length) return;
+  let replacement = matches[0];
+  for (const match of matches.slice(1)) {
+    while (!match.startsWith(replacement)) replacement = replacement.slice(0, -1);
+  }
+  if (replacement.length > token.length || matches.length === 1) {
+    const delimiter = quote || (/\s/.test(replacement) ? '"' : '');
+    // Replace the rest of the current token too, but preserve later arguments.
+    const tail = commandInput.value.slice(cursor);
+    let end = cursor;
+    if (quote && (raw.length === 1 || !raw.endsWith(quote))) {
+      const closing = tail.indexOf(quote);
+      if (closing >= 0) end += closing + 1;
+    } else if (!quote) end += tail.match(/^\S*/)[0].length;
+    commandInput.setRangeText(delimiter + replacement + delimiter, start, end, 'end');
+    // Keep the caret inside quoted containers so another Tab completes children.
+    if (delimiter && replacement.endsWith('/')) {
+      const position = commandInput.selectionStart - 1;
+      commandInput.setSelectionRange(position, position);
+    }
+  }
+  if (matches.length > 1) printTerminal(matches.join('  '));
+}
 
 
 // Turn raw terminal text into one small command object. Flags are kept
@@ -148,6 +253,8 @@ async function tokenizeCommand(command) {
   if (command === '') {
     return null;
   }
+  const aliases = { 'cd..': 'cd ..', '..': 'cd ..', dir: 'ls', ll: 'ls -r', md: 'mkdir', type: 'load', erase: 'rm', del: 'rm' };
+  command = aliases[command.toLowerCase()] || command;
   const parts = command.match(/"[^"]*"|'[^']*'|\S+/g)?.map(part => part.replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, '$1$2')) || [];
   const flags = [];
   const args = [];
@@ -216,8 +323,9 @@ async function executeCommand({ cmd, flags, args }) {
     for (const [index, record] of scenes.entries()) {
       printTerminal(`Generating ${index + 1}/${scenes.length}: ${record.path}`);
       renderTracker();
-      const controls = resolveCreativeControls(record);
-      const params = getGenerationParams(controls);
+      const settings = captureGenerationSettings(record);
+      const controls = settings.controls;
+      const params = settings.params;
       let streamedIntoEditor = false;
       if (currentRecord?.id === record.id) showReasoning('');
       setTokenSpeed(0, true);
@@ -232,7 +340,7 @@ async function executeCommand({ cmd, flags, args }) {
           setSaveStatus('streaming');
           renderUiState();
         }
-      });
+      }, settings);
       if (generation === null) {
         renderTracker();
         setTokenSpeed(null);
@@ -249,6 +357,7 @@ async function executeCommand({ cmd, flags, args }) {
         ...generation.metrics,
         generatedAt: record.updatedAt
       };
+      record.generationSettings = settings;
       await saveRecord(recordDirectory, record);
       if (currentRecord?.id === record.id) {
         mainEditor.value = generation.content;
@@ -266,6 +375,7 @@ async function executeCommand({ cmd, flags, args }) {
       }
     }
     await refreshRecords();
+    await persistUserJson();
     printTerminal(`Generated ${scenes.length} scene${scenes.length === 1 ? '' : 's'}.`);
     return;
   }
@@ -308,6 +418,16 @@ async function executeCommand({ cmd, flags, args }) {
   }
 
   if (cmd === 'save' || cmd === 's') {
+    if (currentRecord && currentRecord.type !== 'scene') {
+      currentRecord.creativeControls = readCreativeOverrides();
+      currentRecord.updatedAt = new Date().toISOString();
+      await saveRecord(recordDirectory, currentRecord);
+      await refreshRecords();
+      currentRecord = findRecord(currentRecord.id);
+      setSaveStatus(`${batchLoadedScenes.length} scenes`);
+      printTerminal(`Saved controls for ${currentRecord.path}. Child scene text remains read-only in batch view.`);
+      return;
+    }
     if (!currentRecord) {
       printTerminal('Load or create a scene before saving.');
       return;
@@ -327,6 +447,8 @@ async function executeCommand({ cmd, flags, args }) {
     if (resolvePath(target) === '/') {
       currentRecord = null;
       currentPath = '/';
+      batchLoadedScenes = [];
+      mainEditor.readOnly = false;
       mainEditor.value = '';
       creativeOverrideIds.clear();
       showCreativeControls(globalCreativeControls);
@@ -341,6 +463,23 @@ async function executeCommand({ cmd, flags, args }) {
       printTerminal(`Record not found: ${target}`);
       return;
     }
+    if (record.type !== 'scene') {
+      batchLoadedScenes = getScenesUnder(record.path);
+      currentRecord = record;
+      currentPath = record.path;
+      mainEditor.readOnly = true;
+      mainEditor.value = batchLoadedScenes.map(scene => `--- ${scene.path} ---\n${scene.content || ''}`).join('\n\n');
+      creativeOverrideIds = new Set(Object.keys(record.creativeControls || {}));
+      showCreativeControls(resolveCreativeControls(record), creativeOverrideIds);
+      setTokenSpeed(null);
+      showReasoning('');
+      setSaveStatus(`${batchLoadedScenes.length} scenes`);
+      printTerminal(`Loaded ${batchLoadedScenes.length} child scene${batchLoadedScenes.length === 1 ? '' : 's'} from ${record.path}.`);
+      renderUiState();
+      return;
+    }
+    batchLoadedScenes = [];
+    mainEditor.readOnly = false;
     currentRecord = record;
     currentPath = record.path;
     mainEditor.value = record.content || '';
@@ -382,6 +521,8 @@ async function executeCommand({ cmd, flags, args }) {
     if (records.some(item => item.id === currentRecord?.id)) {
       currentRecord = null;
       currentPath = '/';
+      batchLoadedScenes = [];
+      mainEditor.readOnly = false;
       mainEditor.value = '';
       creativeOverrideIds.clear();
       showCreativeControls(globalCreativeControls);
@@ -429,6 +570,7 @@ async function executeCommand({ cmd, flags, args }) {
       'mkdir [-p|--parents] <path>\n' +
       'touch <scene>\n' +
       'load <path|id> | save | pwd | cd <path>\n' +
+      'aliases: cd.. | .. | dir | ll | md | type | del | erase\n' +
       'mv [-f|--force] <source> <destination>\n' +
       'rm [-r|--recursive] [-f|--force] <path|id> (combined: -rf)\n' +
       'rmdir [-r|--recursive] [-f|--force] <path|id> (combined: -rf)\n' +
@@ -436,7 +578,8 @@ async function executeCommand({ cmd, flags, args }) {
       'tracker new <name> [path] | tracker show | tracker delete|rm <name>\n' +
       'neofetch [-a|--ascii] [boykisser|cherenkov|snep]\n' +
       `color <name|#RRGGBB|reset> (${Object.keys(siteColors).join(', ')})\n` +
-      'clear | help'
+      'clear | help\n' +
+      'Keyboard: Up/Down browse history (Down restores your draft); Tab completes commands, paths and options; Shift+Tab moves focus; Ctrl+L clears output.'
     );
     return;
   }
@@ -705,6 +848,7 @@ function loadTrackerDefinitions() {
 
 function saveTrackerDefinitions() {
   localStorage.setItem('trackers', JSON.stringify(trackerDefinitions));
+  persistUserJson();
 }
 
 function getApplicableTrackers(path = currentPath) {
@@ -785,12 +929,17 @@ function setupCreativeControls() {
 function updateSlider(slider) {
   const output = document.querySelector(`[data-value-for="${slider.id}"]`);
   if (output) {
-    output.textContent = generationControlParameters[slider.id]
+    output.textContent = slider.id === 'pacing'
+      ? getPacingLabel(slider.value)
+      : slider.id === 'context-scope'
+        ? getContextScopeLabel(slider.value)
+        : generationControlParameters[slider.id]
       ? `${getControlMultiplier(slider.value).toFixed(2)}×`
       : `${slider.value}%`;
   }
-  slider.style.setProperty('--value', `${slider.value}%`);
-  slider.style.setProperty('--slider-color', `color-mix(in srgb, var(--accent) ${55 + Number(slider.value) * 0.4}%, white)`);
+  const percent = slider.max === '5' ? Number(slider.value) * 20 : Number(slider.value);
+  slider.style.setProperty('--value', `${percent}%`);
+  slider.style.setProperty('--slider-color', `color-mix(in srgb, var(--accent) ${55 + percent * 0.4}%, white)`);
 }
 
 function getDefaultCreativeControls() {
@@ -803,7 +952,7 @@ function getDefaultCreativeControls() {
 function showCreativeControls(values, localIds = new Set()) {
   for (const id of creativeControlIds) {
     const control = document.getElementById(id);
-    control.value = values[id] ?? '';
+    control.value = id === 'pacing' ? getPacingValue(values[id]) : values[id] ?? '';
     control.dataset.source = currentRecord && !localIds.has(id) ? 'inherited' : 'local';
     control.title = control.dataset.source === 'inherited' ? 'Inherited from a parent' : '';
     if (control.matches('input[type="range"]')) updateSlider(control);
@@ -936,12 +1085,47 @@ function resolveCreativeControls(record, ignoreCurrent = false) {
   return resolved;
 }
 
-// Build the user message from the scene and all of its ancestors. The order
-// is broad context first and scene-specific context last.
+function getPacingLabel(value) {
+  if (['slow', 'moderate', 'fast'].includes(value)) return value;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 'moderate';
+  return numeric < 34 ? 'slow' : numeric > 66 ? 'fast' : 'moderate';
+}
+
+function getPacingValue(value) {
+  if (value === 'slow') return 20;
+  if (value === 'fast') return 80;
+  if (value === 'moderate') return 50;
+  return Number.isFinite(Number(value)) ? Number(value) : 50;
+}
+
+const contextScopeLabels = ['entire workspace', 'current folder', 'current book', 'current chapter', 'previous scene', 'no context'];
+
+function getContextScopeLabel(value) {
+  return contextScopeLabels[Math.max(0, Math.min(5, Number(value) || 0))];
+}
+
+// Build context at the scope selected by the scene's inherited controls.
 function resolveSceneContext(scene, controls = resolveCreativeControls(scene)) {
-  const hierarchy = recordArray
-    .filter(record => record.path && (record.path === scene.path || isPathInside(scene.path, record.path)))
-    .sort((a, b) => a.path.length - b.path.length)
+  const requestedScope = Number(controls['context-scope']);
+  const scope = Math.max(0, Math.min(5, Number.isFinite(requestedScope) ? requestedScope : 2));
+  const ancestors = recordArray
+    .filter(record => record.path && (record.path === scene.path || isPathInside(scene.path, record.path)));
+  const ancestorAtDepth = depth => ancestors.find(record => record.path.split('/').filter(Boolean).length === depth);
+  let contextRecords = [];
+  if (scope === 0) contextRecords = [...recordArray];
+  if (scope >= 1 && scope <= 3) {
+    const root = ancestorAtDepth(scope);
+    if (root) contextRecords = recordArray.filter(record => record.path === root.path || isPathInside(record.path, root.path));
+  }
+  if (scope === 4) {
+    const siblings = recordArray.filter(record => record.type === 'scene' && record.parentPath === scene.parentPath)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.path.localeCompare(b.path));
+    const index = siblings.findIndex(record => record.id === scene.id);
+    contextRecords = index > 0 ? [siblings[index - 1]] : [];
+  }
+  const storyContext = contextRecords
+    .sort((a, b) => a.path.localeCompare(b.path))
     .map(record => [
       `${record.type}: ${record.path}`,
       record.premise,
@@ -949,7 +1133,26 @@ function resolveSceneContext(scene, controls = resolveCreativeControls(scene)) {
       record.type === 'scene' ? record.content : null
     ].filter(Boolean).join('\n'))
     .join('\n\n');
-  return [hierarchy, getCreativeContext(controls)].filter(Boolean).join('\n\n');
+  const customContext = resolveCustomContextSources(controls['custom-context-sources']);
+  return [storyContext, customContext && `Custom context sources:\n${customContext}`, getCreativeContext(controls)].filter(Boolean).join('\n\n');
+}
+
+function resolveCustomContextSources(input = '') {
+  return input.split('\n').map(line => {
+    const source = line.trim();
+    if (!source.startsWith('/')) return line;
+    const record = findRecord(source);
+    if (!record) return line;
+    const records = record.type === 'scene'
+      ? [record]
+      : recordArray.filter(item => item.path === record.path || isPathInside(item.path, record.path));
+    return records.sort((a, b) => a.path.localeCompare(b.path)).map(item => [
+      `${item.type}: ${item.path}`,
+      item.premise,
+      item.instructions,
+      item.type === 'scene' ? item.content : null
+    ].filter(Boolean).join('\n')).join('\n\n');
+  }).join('\n').trim();
 }
 
 // Include the resolved multipliers in the prompt so the model sees the same
@@ -966,7 +1169,7 @@ function getCreativeContext(values) {
   return [
     'Creative controls:',
     `Length multiplier: ${getControlMultiplier(values.length).toFixed(2)}x`,
-    `Pacing multiplier: ${getControlMultiplier(values.pacing).toFixed(2)}x`,
+    `Pacing: ${getPacingLabel(values.pacing)}`,
     `Chaos multiplier: ${getControlMultiplier(values.chaos).toFixed(2)}x`,
     `Dialogue share: ${values['dialogue-share']}/100`,
     `Tension multiplier: ${getControlMultiplier(values.tension).toFixed(2)}x`,
@@ -996,9 +1199,26 @@ function getGenerationParams(values) {
   return {
     max_tokens: Math.round(clamp(multiply('length'), 1, 131072)),
     temperature: Number(clamp(multiply('chaos'), 0, 2).toFixed(2)),
-    top_p: Number(clamp(multiply('pacing'), 0.01, 1).toFixed(2)),
+    top_p: Number(clamp(base.top_p, 0.01, 1).toFixed(2)),
     presence_penalty: Number(clamp(multiply('tension'), -2, 2).toFixed(2)),
     ...(reasoningEffortInput.value && { reasoning_effort: reasoningEffortInput.value })
+  };
+}
+
+function captureGenerationSettings(record) {
+  // The loaded record's controls may have changed in the UI since it was last
+  // saved. Generate from exactly what the Creative Controls tab currently
+  // shows; records generated in the background still use their stored,
+  // inherited controls.
+  const controls = currentRecord?.id === record.id
+    ? readCreativeControls()
+    : resolveCreativeControls(record);
+  return {
+    controls,
+    params: getGenerationParams(controls),
+    endpoint: endpointInput.value,
+    model: modelInput.value,
+    systemPrompt: systemPromptInput.value
   };
 }
 
@@ -1009,6 +1229,7 @@ async function refreshRecords() {
     .map(formatRecord)
     .join('\n') || 'no records yet';
   renderTracker();
+  await persistUserJson();
 }
 
 // New records use one consistent shape. The path depth supplies the node type,
@@ -1039,6 +1260,8 @@ async function createRecord(path, requestedType) {
   await saveRecord(recordDirectory, record);
   await refreshRecords();
   if (type === 'scene') {
+    batchLoadedScenes = [];
+    mainEditor.readOnly = false;
     currentRecord = record;
     currentPath = path;
     mainEditor.value = '';
@@ -1098,20 +1321,22 @@ async function autoNameGeneratedScene(record, content) {
 
 // Stream one OpenAI-compatible chat completion. Providers that ignore stream
 // mode and return ordinary JSON still use the same callback and metrics path.
-async function openaiGen(context, params, onUpdate) {
+async function openaiGen(context, params, onUpdate, settings = {}) {
   try {
     const startedAt = performance.now();
-    const endpoint = endpointInput.value.replace(/\/$/, '');
+    const endpoint = (settings.endpoint ?? endpointInput.value).replace(/\/$/, '');
+    const model = settings.model ?? modelInput.value;
+    const systemPrompt = settings.systemPrompt ?? systemPromptInput.value;
     const response = await fetch(`${endpoint}/chat/completions`, {
       method: 'POST',
       headers: apiHeaders(),
       body: JSON.stringify({
-        model: modelInput.value,
+        model,
         ...params,
         stream: true,
         stream_options: { include_usage: true },
         messages: [
-          { role: 'system', content: systemPromptInput.value },
+          { role: 'system', content: systemPrompt },
           { role: 'user', content: context }
         ]
       })
@@ -1143,7 +1368,7 @@ async function openaiGen(context, params, onUpdate) {
       reasoning,
       metrics: {
         endpoint,
-        model: modelInput.value,
+        model,
         ...measureCompletion(content, reasoning, usage, startedAt)
       }
     };
@@ -1232,6 +1457,7 @@ function loadConfig() {
     const baseParams = { ...generationBaseDefaults, ...config.baseGenerationParams };
     for (const [parameter, input] of Object.entries(generationBaseInputs)) input.value = baseParams[parameter];
     Object.assign(globalCreativeControls, config.creativeControls || {});
+    globalCreativeControls.pacing = getPacingValue(globalCreativeControls.pacing);
   } catch (error) {
     console.error('Failed to load config:', error);
   }
@@ -1247,6 +1473,7 @@ function saveConfig() {
     baseGenerationParams: getBaseGenerationParams(),
     creativeControls: globalCreativeControls
   }));
+  persistUserJson();
   setTerminalState('configuration saved');
 }
 
@@ -1288,6 +1515,83 @@ async function writeJson(fileHandle, data) {
   const writable = await fileHandle.createWritable();
   await writable.write(JSON.stringify(data, null, 2));
   await writable.close();
+}
+
+function getStoredConfig() {
+  try { return JSON.parse(localStorage.getItem('config')) || {}; }
+  catch { return {}; }
+}
+
+function buildUserData() {
+  return {
+    schemaVersion: 1,
+    exportedAt: new Date().toISOString(),
+    config: getStoredConfig(),
+    siteColor: localStorage.getItem('siteColor') || 'cyan',
+    trackers: trackerDefinitions,
+    records: recordArray
+  };
+}
+
+async function persistUserJson() {
+  if (!opfsRoot) return;
+  const data = buildUserData();
+  await writeJson(await opfsRoot.getFileHandle('user.json', { create: true }), data);
+  try {
+    await fetch('/api/user', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+  } catch {
+    // Static/offline deployments still retain the complete OPFS copy.
+  }
+}
+
+async function exportUserData() {
+  await persistUserJson();
+  const blob = new Blob([JSON.stringify(buildUserData(), null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'user.json';
+  link.click();
+  URL.revokeObjectURL(url);
+  setTerminalState('data exported');
+}
+
+async function importUserData(event) {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    if (!Array.isArray(data.records) || !data.config || typeof data.config !== 'object') throw new Error('Invalid user.json file.');
+    for await (const handle of recordDirectory.values()) {
+      if (handle.kind === 'file' && handle.name.endsWith('.json')) await recordDirectory.removeEntry(handle.name);
+    }
+    for (const record of data.records) await saveRecord(recordDirectory, record);
+    localStorage.setItem('config', JSON.stringify(data.config));
+    localStorage.setItem('siteColor', data.siteColor || 'cyan');
+    trackerDefinitions = Array.isArray(data.trackers) ? data.trackers : [];
+    localStorage.setItem('trackers', JSON.stringify(trackerDefinitions));
+    loadConfig();
+    setSiteColor(data.siteColor || 'cyan', false);
+    currentRecord = null;
+    currentPath = '/';
+    batchLoadedScenes = [];
+    mainEditor.readOnly = false;
+    mainEditor.value = '';
+    creativeOverrideIds.clear();
+    await refreshRecords();
+    showCreativeControls(globalCreativeControls);
+    await persistUserJson();
+    renderUiState();
+    printTerminal(`Imported ${recordArray.length} record${recordArray.length === 1 ? '' : 's'}.`);
+    setTerminalState('data imported');
+  } catch (error) {
+    printTerminal(`Import failed: ${error.message}`, 'error');
+  }
 }
 
 // Record files are named <immutable-id>.json. Virtual moves only update the

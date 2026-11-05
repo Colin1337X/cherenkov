@@ -1,0 +1,5 @@
+{
+  "name": "cherenkov",
+  "private": true,
+  "scripts": { "start": "node server.js" }
+}
