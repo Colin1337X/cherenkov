@@ -762,3 +762,53 @@ textarea::-webkit-scrollbar-thumb,
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Xenon extends Cherenkov's existing palette, typography, and terminal. */
+.container { width: min(100%, 1920px); grid-template-rows: auto; }
+.workspace { grid-template-columns: minmax(210px, .75fr) minmax(380px, 2.6fr) minmax(280px, 1fr); align-items: start; }
+.library-sidebar { min-width: 0; display: grid; gap: 18px; }
+.library-sidebar nav { display: grid; gap: 5px; max-height: 450px; overflow: auto; }
+.library-sidebar nav button { text-align: left; overflow-wrap: anywhere; }
+.library-sidebar nav button[aria-current="true"] { border-color: var(--accent); background: var(--glow); }
+.field-stack { display: grid; gap: 10px; }
+.field-stack label, #context-panel > label, .preview-panel > label { display: grid; gap: 6px; font-size: .85rem; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.hint { color: var(--muted); font-size: .82rem; line-height: 1.5; }
+.notice { border: 1px solid var(--accent); border-radius: 10px; padding: 12px 16px; white-space: pre-wrap; line-height: 1.5; }
+[hidden] { display: none !important; }
+.editor-search, #revision-panel { margin: 10px 0; }
+details > summary { padding: 8px 0; }
+.preview-panel { margin-top: 20px; border-top: 1px solid var(--line); padding-top: 16px; display: grid; gap: 10px; }
+#generation-preview { min-height: 250px; line-height: 1.65; }
+.result-text, .comparison pre, #preview-source, #preview-reasoning { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 300px; overflow: auto; font: .85rem/1.5 monospace; }
+.comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.comparison pre { padding: 8px; border: 1px solid var(--line); }
+.data-tools { flex-wrap: wrap; }
+.terminal-output { height: 240px; }
+.terminal-shell.collapsed .terminal-output, .terminal-shell.collapsed .terminal-input-row { display: none; }
+.focus-mode .library-sidebar, .focus-mode .sidebar, .focus-mode .terminal-shell, .focus-mode .data-tools, .focus-mode footer { display: none; }
+.focus-mode .workspace { grid-template-columns: minmax(0, 950px); justify-content: center; }
+.focus-mode .editor-panel { min-height: 85dvh; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+button:disabled { opacity: .45; cursor: default; transform: none; }
+#context-entries { max-height: 320px; overflow: auto; }
+#writing-tools details, #bible-panel { border-top: 1px solid var(--line); padding-top: 8px; }
+@media (max-width: 1250px) {
+  .workspace { grid-template-columns: minmax(0, 2.5fr) minmax(270px, 1fr); }
+  .library-sidebar { grid-column: 1 / -1; grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr); }
+  .library-sidebar > h2, .library-sidebar > form { grid-column: 1; }
+  .library-sidebar > nav { grid-column: 1; }
+  #bible-panel { grid-column: 2; grid-row: 1 / 4; }
+  .sidebar { display: flex; }
+}
+@media (max-width: 800px) {
+  .workspace, .library-sidebar { display: flex; flex-direction: column; }
+  .workspace > * { width: 100%; }
+  .editor-panel { order: 0; }
+  .library-sidebar { order: 1; }
+  .sidebar { order: 2; }
+  .resizable-text-area { min-height: 55dvh; }
+  .comparison { grid-template-columns: 1fr; }
+  .quiet-button { min-height: 36px; }
+  .focus-mode .editor-panel { display: flex; }
+}

@@ -3,17 +3,21 @@
     <head>
         <meta charset="UTF-8">
         <meta name="theme-color" content="#0187e0">
-        <title>cherenkov</title>
+        <title>Xenon · Cherenkov writing workspace</title>
         <link rel="stylesheet" href="styles.css">
+        <script src="core/xenon.js" defer></script>
+        <script src="ai/providers.js" defer></script>
+        <script src="adapters/browser-storage.js" defer></script>
         <script src="main.js" defer></script>
+        <script src="xenon-app.js" defer></script>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
     </head>
     <body>
         <div class="container">
             <header class="app-header">
                 <div>
-                    <p class="eyebrow">story workspace</p>
-                    <h1 class="title">cherenkov</h1>
+                    <p class="eyebrow">the Cherenkov creative writing workspace</p>
+                    <h1 class="title">xenon</h1>
                 </div>
                 <div class="header-status" aria-live="polite">
                     <span id="current-path">/</span>
@@ -22,7 +26,34 @@
                 </div>
             </header>
 
+            <p id="storage-warning" class="notice" role="status" hidden></p>
+            <p id="runtime-status" class="eyebrow" aria-live="polite">opening workspace…</p>
             <main class="workspace">
+                <aside class="library-sidebar panel" aria-label="Project library">
+                    <h2>library</h2>
+                    <form id="create-scene-form" class="field-stack">
+                        <label>Scene path<input id="new-scene-path" class="input-field" value="/stories/my-book/chapter-1/scene-1" required aria-label="New scene path"></label>
+                        <button class="quiet-button" type="submit">create scene and parents</button>
+                    </form>
+                    <nav id="project-navigation" aria-label="Project navigation"></nav>
+                    <details id="bible-panel" open>
+                        <summary>Story Bible</summary>
+                        <p class="hint" id="bible-scope">Select a book or scene.</p>
+                        <div id="bible-list" class="field-stack"></div>
+                        <form id="bible-form" class="field-stack">
+                            <input id="bible-id" type="hidden">
+                            <label>Type<select id="bible-type" class="input-field"></select></label>
+                            <label>Name<input id="bible-name" class="input-field" required></label>
+                            <label>Aliases, separated by commas<input id="bible-aliases" class="input-field"></label>
+                            <label>Status<select id="bible-status" class="input-field"></select></label>
+                            <label>Description<textarea id="bible-description" class="text-area-small"></textarea></label>
+                            <label>Metadata (JSON)<textarea id="bible-metadata" class="text-area-small">{}</textarea></label>
+                            <label>Source paths or record IDs, one per line<textarea id="bible-references" class="text-area-small"></textarea></label>
+                            <div class="toolbar"><button class="quiet-button" type="submit">save entry</button><button class="quiet-button" id="bible-new" type="button">new entry</button></div>
+                        </form>
+                        <button class="quiet-button" id="extract-bible" type="button">extract candidates from scene</button>
+                    </details>
+                </aside>
                 <section class="panel editor-panel">
                     <div class="panel-heading">
                         <div>
@@ -34,14 +65,58 @@
                             <span class="status-pill" id="save-status">ready</span>
                         </div>
                     </div>
+                    <div class="toolbar" aria-label="Editor actions">
+                        <button id="save-scene" class="quiet-button" type="button">save</button>
+                        <button id="recover-scratch" class="quiet-button" type="button">scratchpad</button>
+                        <button id="undo-edit" class="quiet-button" type="button">undo</button>
+                        <button id="redo-edit" class="quiet-button" type="button">redo</button>
+                        <button id="previous-scene" class="quiet-button" type="button">previous scene</button>
+                        <button id="next-scene" class="quiet-button" type="button">next scene</button>
+                        <button id="focus-mode" class="quiet-button" type="button" aria-pressed="false">focus mode</button>
+                    </div>
+                    <details class="editor-search"><summary>Search and replace</summary>
+                        <div class="field-stack"><label>Find<input id="search-text" class="input-field"></label><label>Replace with<input id="replace-text" class="input-field"></label>
+                        <div class="toolbar"><button id="find-next" class="quiet-button" type="button">find next</button><button id="replace-one" class="quiet-button" type="button">replace selection</button><button id="replace-all" class="quiet-button" type="button">replace all</button><button id="search-project" class="quiet-button" type="button">search project</button></div><div id="search-results"></div></div>
+                    </details>
                     <details class="reasoning-panel" id="reasoning-panel" hidden>
                         <summary>provider reasoning</summary>
                         <pre id="reasoning-output"></pre>
                     </details>
                     <textarea class="resizable-text-area" placeholder="Load or create a scene, then begin writing…" id="main-editor" aria-label="Story editor"></textarea>
+                    <details id="revision-panel"><summary>Draft history and comparison</summary><div id="revision-list" class="field-stack"></div><div class="comparison"><pre id="revision-before" aria-label="Previous revision"></pre><pre id="revision-after" aria-label="Current revision"></pre></div></details>
+                    <section id="preview-panel" class="preview-panel" aria-label="Generation preview" hidden>
+                        <h2>generation preview</h2><p id="preview-status" role="status"></p>
+                        <label>Candidate<select id="candidate-select" class="input-field"></select></label>
+                        <textarea id="generation-preview" class="text-area-small" aria-label="Generated candidate" readonly></textarea>
+                        <details><summary>Compare with source</summary><pre id="preview-source"></pre></details>
+                        <details><summary>Provider reasoning</summary><pre id="preview-reasoning"></pre></details>
+                        <div class="toolbar"><button id="accept-candidate" class="quiet-button" type="button">accept replacement</button><button id="append-candidate" class="quiet-button" type="button">append</button><button id="reject-candidate" class="quiet-button" type="button">reject</button><button id="regenerate-candidate" class="quiet-button" type="button">regenerate</button><button id="copy-candidate" class="quiet-button" type="button">copy</button><button id="export-candidate" class="quiet-button" type="button">export candidate</button></div>
+                        <div id="extraction-review" class="field-stack"></div>
+                    </section>
                 </section>
 
                 <aside class="sidebar">
+                    <section class="panel field-stack" id="writing-tools">
+                        <h2>writing tools</h2>
+                        <p class="hint">Select a passage or use the full scene. Results stay in preview until accepted.</p>
+                        <label>Operation<select id="writing-operation" class="input-field"><option>continue</option><option>rewrite</option><option>expand</option><option>describe</option><option>brainstorm</option><option>critique</option><option>draft</option><option>continuity</option></select></label>
+                        <label>Rewrite objective<select id="rewrite-preset" class="input-field"><option>Clarity</option><option>Conciseness</option><option>More descriptive prose</option><option>More natural dialogue</option><option>Stronger emotion</option><option>Faster pacing</option><option>Slower pacing</option><option>Different tone</option><option>Custom instructions</option></select></label>
+                        <label>Instructions / outline / brainstorm topic<textarea id="writing-instructions" class="text-area-small" placeholder="Plot, motivation, dialogue, setting, conflict, twist, title, ending…"></textarea></label>
+                        <label>Explicit input (optional)<textarea id="writing-input" class="text-area-small" placeholder="Leave empty to use the selection or scene"></textarea></label>
+                        <label>Model for this operation (optional)<input id="operation-model" class="input-field" placeholder="use provider model"></label>
+                        <label>Candidates<input id="candidate-count" class="input-field" type="number" min="1" max="5" value="1"></label>
+                        <div class="toolbar"><button id="run-writing" class="quiet-button" type="button">generate preview</button><button id="cancel-writing" class="quiet-button" type="button">cancel generation</button></div>
+                        <button id="check-continuity" class="quiet-button" type="button">check structured canon</button>
+                        <pre id="continuity-results" class="result-text" aria-live="polite"></pre>
+                        <details><summary>Background jobs (Node)</summary><button id="start-job" class="quiet-button" type="button">start current operation as job</button><button id="refresh-jobs" class="quiet-button" type="button">refresh jobs</button><div id="jobs-list" class="field-stack"></div></details>
+                    </section>
+                    <details class="panel" id="context-panel">
+                        <summary>Context inspector</summary>
+                        <label>Budget (estimated tokens)<input id="context-budget" class="input-field" type="number" min="128" max="131072" value="6000"></label>
+                        <label>Global writing preferences<textarea id="writing-preferences" class="text-area-small"></textarea></label>
+                        <button id="inspect-context" class="quiet-button" type="button">rebuild and inspect</button>
+                        <p id="context-summary" role="status"></p><div id="context-entries" class="field-stack"></div><pre id="context-output" class="result-text"></pre>
+                    </details>
                     <section class="panel explorer-panel" id="explorer">
                         <div class="panel-heading compact">
                             <div>
@@ -126,6 +201,17 @@
                                 </select>
                             </label>
                             <p class="settings-label">provider</p>
+                            <label>Endpoint profile<select id="endpoint-profile" class="input-field"><option value="">current settings</option></select></label>
+                            <label>Profile name<input id="profile-name" class="input-field" placeholder="local / remote / server"></label>
+                            <button id="save-profile" class="quiet-button" type="button">save profile</button>
+                            <label><input id="use-proxy" type="checkbox"> Use Node server profile</label>
+                            <label>Server profile ID<input id="server-profile" class="input-field" value="default"></label>
+                            <p class="hint">Direct browser credentials are stored with this workspace. Node proxy keys stay on the server. Exports omit browser API keys by default.</p>
+                            <details><summary>Provider capabilities and requests</summary><div class="field-stack">
+                                <label><input id="cap-temperature" type="checkbox" checked> temperature</label><label><input id="cap-top-p" type="checkbox" checked> top_p</label><label><input id="cap-presence" type="checkbox" checked> presence_penalty</label><label><input id="cap-reasoning" type="checkbox" checked> reasoning_effort</label><label><input id="cap-usage" type="checkbox" checked> streaming usage</label>
+                                <label>Token parameter<select id="token-field" class="input-field"><option>max_tokens</option><option>max_completion_tokens</option></select></label>
+                                <label>Timeout (seconds)<input id="request-timeout" type="number" min="1" max="900" value="120" class="input-field"></label><label>Retries before streaming<input id="retry-count" class="input-field" type="number" min="0" max="3" value="0"></label>
+                            </div></details>
                             <label>system prompt<textarea class="text-area-small" placeholder="system prompt" id="system-prompt"></textarea></label>
                             <label>endpoint<input type="text" class="input-field" placeholder="http://localhost:8080/v1" id="openai-endpoint"></label>
                             <label>API key<input type="password" class="input-field" placeholder="optional for local models" id="openai-api-key"></label>
@@ -142,7 +228,7 @@
 
             <section class="terminal-shell" aria-label="Cherenkov terminal">
                 <div class="terminal-bar">
-                    <span>terminal</span>
+                    <button id="toggle-terminal" class="quiet-button" type="button" aria-expanded="true">terminal · collapse</button>
                     <span id="terminal-state" aria-live="polite">ready</span>
                 </div>
                 <div class="terminal-output" id="terminal-output" role="log" aria-live="polite" aria-label="Terminal output"></div>
@@ -155,8 +241,12 @@
             <section class="data-tools" aria-label="User data">
                 <button class="quiet-button" id="import-data-button" type="button">import data</button>
                 <button class="quiet-button" id="export-data-button" type="button">export data</button>
+                <button class="quiet-button" id="make-backup" type="button">backup</button>
+                <button class="quiet-button" id="show-backups" type="button">recover backups</button>
+                <button class="quiet-button" id="restore-trash" type="button">restore deleted records</button>
                 <input id="import-data-input" type="file" accept="application/json,.json" hidden>
             </section>
+            <section id="backups-list" class="field-stack" aria-label="Recoverable backups" hidden></section>
             <footer class="center-text">made with ❤️‍🔥 by colin</footer>
         </div>
     </body>

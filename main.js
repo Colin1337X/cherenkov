@@ -2,6 +2,7 @@
 // Configuration is loaded first, then OPFS records are loaded, and finally
 // the terminal listener is attached so commands always have storage ready.
 async function init() {
+    await initializeXenonStorage();
     saveConfigButton.addEventListener('click', saveConfig);
     getModelsButton.addEventListener('click', getModels);
     availableModelsSelect.addEventListener('change', syncModelSelect);
@@ -9,11 +10,8 @@ async function init() {
     setupCreativeControls();
     loadConfig();
     trackerDefinitions = loadTrackerDefinitions();
-    setSiteColor(localStorage.getItem('siteColor') || localStorage.getItem('terminalColor') || 'cyan', false);
+    setSiteColor(XenonStorage.settings.getItem('siteColor') || XenonStorage.settings.getItem('terminalColor') || 'cyan', false);
     showCreativeControls(globalCreativeControls);
-    await getModels();
-    opfsRoot = await navigator.storage.getDirectory();
-    recordDirectory = await getRecordDirectory();
     await refreshRecords();
     renderUiState();
     mainEditor.addEventListener('input', () => {
@@ -168,6 +166,9 @@ let globalCreativeControls = {};
 let creativeOverrideIds = new Set();
 let trackerDefinitions = [];
 let batchLoadedScenes = [];
+let workspaceStorage;
+let xenonData = { bible: [], profiles: [], contextPolicy: {} };
+let editorEpoch = 0;
 const commandHistory = [];
 let commandHistoryIndex = 0;
 let commandHistoryDraft = '';
@@ -195,7 +196,7 @@ function completeTerminalInput() {
   const previous = parts.slice(0, active ? -1 : undefined).map(part => part[0].replace(/^(["'])(.*)\1$/, '$2'));
   const cmd = previous[0]?.toLowerCase();
   const args = previous.slice(1).filter(part => !part.startsWith('-'));
-  const commandNames = ['cd', 'clear', 'color', 'generate', 'help', 'load', 'ls', 'mkdir', 'mv', 'neofetch', 'pwd', 'rm', 'rmdir', 'save', 'touch', 'tracker'];
+  const commandNames = ['cd', 'clear', 'color', 'generate', 'help', 'load', 'ls', 'mkdir', 'mv', 'neofetch', 'pwd', 'rm', 'rmdir', 'save', 'touch', 'tracker', 'xenon'];
   const flags = {
     ls: ['-r', '--recursive'], mkdir: ['-p', '--parents'], mv: ['-f', '--force'],
     rm: ['-r', '--recursive', '-f', '--force'], rmdir: ['-r', '--recursive', '-f', '--force'],
@@ -272,7 +273,7 @@ async function tokenizeCommand(command) {
 
 // Dispatch one parsed command. Each branch returns after it finishes so the
 // handlers stay independent instead of accidentally nesting inside each other.
-async function executeCommand({ cmd, flags, args }) {
+async function executeCherenkovCommand({ cmd, flags, args }) {
   const [inputdir, outputdir] = args;
 
   // A destination can be one scene or any container above it. Generation is
@@ -320,18 +321,26 @@ async function executeCommand({ cmd, flags, args }) {
       printTerminal(`Would generate ${scenes.length} scene${scenes.length === 1 ? '' : 's'}:\n${scenes.map(record => record.path).join('\n')}`);
       return;
     }
-    for (const [index, record] of scenes.entries()) {
+    for (const [index, queuedRecord] of scenes.entries()) {
+      // Automatic naming refreshes the record array. Reacquire each queued scene
+      // so a later move cannot save an obsolete, empty copy over generated prose.
+      const record = findRecord(queuedRecord.id) || queuedRecord;
       printTerminal(`Generating ${index + 1}/${scenes.length}: ${record.path}`);
       renderTracker();
       const settings = captureGenerationSettings(record);
       const controls = settings.controls;
       const params = settings.params;
+      const sourceVersion = record.version || 0;
+      const sourceEpoch = editorEpoch;
+      const sourceContent = record.content || '';
+      let partialGeneration;
       let streamedIntoEditor = false;
       if (currentRecord?.id === record.id) showReasoning('');
       setTokenSpeed(0, true);
       const generation = await openaiGen(resolveSceneContext(record, controls), params, update => {
+        partialGeneration = update;
         setTokenSpeed(update.tokensPerSecond, true);
-        if (currentRecord?.id === record.id) {
+        if (currentRecord?.id === record.id && editorEpoch === sourceEpoch) {
           showReasoning(update.reasoning);
           if (!update.content) return;
           streamedIntoEditor = true;
@@ -344,8 +353,17 @@ async function executeCommand({ cmd, flags, args }) {
       if (generation === null) {
         renderTracker();
         setTokenSpeed(null);
-        if (streamedIntoEditor) setSaveStatus('unsaved');
+        if (streamedIntoEditor && editorEpoch === sourceEpoch && currentRecord?.id === record.id) {
+          mainEditor.value = sourceContent;
+          setSaveStatus('saved');
+          if (partialGeneration?.content) showLegacyCandidate(record, partialGeneration);
+        }
         printTerminal(`Generation failed: ${record.path}`, 'error');
+        return;
+      }
+      if ((findRecord(record.id)?.version || 0) !== sourceVersion || (currentRecord?.id === record.id && editorEpoch !== sourceEpoch)) {
+        showLegacyCandidate(record, generation);
+        printTerminal('Scene changed during generation. Result kept in preview; manuscript preserved.', 'error');
         return;
       }
       record.content = generation.content;
@@ -365,6 +383,7 @@ async function executeCommand({ cmd, flags, args }) {
         setSaveStatus('saved');
       }
       setTokenSpeed(generation.metrics.tokensPerSecond);
+      await persistUserJson();
       if (autoName) {
         try {
           await autoNameGeneratedScene(record, generation.content);
@@ -655,7 +674,7 @@ function setSiteColor(name, announce = true) {
   document.documentElement.style.setProperty('--accent', color);
   document.documentElement.dataset.siteColor = normalized === 'reset' ? 'cyan' : normalized;
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', color);
-  localStorage.setItem('siteColor', normalized === 'reset' ? 'cyan' : normalized);
+  XenonStorage.settings.setItem('siteColor', normalized === 'reset' ? 'cyan' : normalized);
   if (announce) printTerminal(`Site color: ${normalized === 'reset' ? 'cyan' : normalized}`, 'success');
 }
 
@@ -677,10 +696,10 @@ async function showNeofetch(requestedName) {
   const speeds = samples.map(generation => generation.tokensPerSecond);
   // Storage estimates are optional browser features. Neofetch should still
   // render if a privacy setting blocks one of these queries.
-  const storage = navigator.storage.estimate
+  const storage = navigator.storage?.estimate
     ? await navigator.storage.estimate().catch(() => ({}))
     : {};
-  const persisted = navigator.storage.persisted
+  const persisted = navigator.storage?.persisted
     ? await navigator.storage.persisted().catch(() => false)
     : false;
   const counts = Object.fromEntries(['folder', 'book', 'chapter', 'scene'].map(type => [type, recordArray.filter(record => record.type === type).length]));
@@ -833,13 +852,13 @@ function renderUiState() {
 // story records themselves, so exported or moved records retain their status.
 function loadTrackerDefinitions() {
   try {
-    const value = JSON.parse(localStorage.getItem('trackers'));
+    const value = JSON.parse(XenonStorage.settings.getItem('trackers'));
     if (Array.isArray(value)) return value.filter(item => item?.name && item?.path);
-    const oldScope = localStorage.getItem('trackerScope');
+    const oldScope = XenonStorage.settings.getItem('trackerScope');
     if (!oldScope) return [];
     const migrated = [{ name: 'status', path: oldScope }];
-    localStorage.setItem('trackers', JSON.stringify(migrated));
-    localStorage.removeItem('trackerScope');
+    XenonStorage.settings.setItem('trackers', JSON.stringify(migrated));
+    XenonStorage.settings.removeItem('trackerScope');
     return migrated;
   } catch {
     return [];
@@ -847,8 +866,8 @@ function loadTrackerDefinitions() {
 }
 
 function saveTrackerDefinitions() {
-  localStorage.setItem('trackers', JSON.stringify(trackerDefinitions));
-  persistUserJson();
+  XenonStorage.settings.setItem('trackers', JSON.stringify(trackerDefinitions));
+  persistUserJson().catch(reportStorageError);
 }
 
 function getApplicableTrackers(path = currentPath) {
@@ -1075,14 +1094,7 @@ function getScenesUnder(path) {
 // Each record stores only its own overrides, so later parent edits still flow
 // down to children that have not overridden that specific value.
 function resolveCreativeControls(record, ignoreCurrent = false) {
-  const resolved = { ...globalCreativeControls };
-  const hierarchy = recordArray
-    .filter(item => item.path && (item.path === record.path || isPathInside(record.path, item.path)))
-    .sort((a, b) => a.path.length - b.path.length);
-  for (const item of hierarchy) {
-    if (!ignoreCurrent || item.id !== record.id) Object.assign(resolved, item.creativeControls || {});
-  }
-  return resolved;
+  return Xenon.inherit(recordArray.filter(item => !ignoreCurrent || item.id !== record.id), record, globalCreativeControls);
 }
 
 function getPacingLabel(value) {
@@ -1165,7 +1177,7 @@ function getCreativeContext(values) {
     ['Style guide', values['style-guide']],
     ['World rules and constraints', values['world-rules-constraints']],
     ['Character ledger and arcs', values['character-ledger-and-arcs']]
-  ].filter(([, value]) => value.trim());
+  ].filter(([, value]) => String(value ?? '').trim());
   return [
     'Creative controls:',
     `Length multiplier: ${getControlMultiplier(values.length).toFixed(2)}x`,
@@ -1244,7 +1256,7 @@ async function createRecord(path, requestedType) {
   if (parentPath !== '/' && !findRecord(parentPath)) return printTerminal(`Parent path not found: ${parentPath}`);
   const now = new Date().toISOString();
   const record = {
-    id: crypto.randomUUID(),
+    id: Xenon.uid(),
     type,
     path,
     parentPath,
@@ -1279,27 +1291,11 @@ async function createRecord(path, requestedType) {
 // avoids sibling collisions, and uses the normal move path so IDs and links
 // remain stable. A naming failure never discards successful story generation.
 async function autoNameGeneratedScene(record, content) {
-  const endpoint = endpointInput.value.replace(/\/$/, '');
-  const response = await fetch(`${endpoint}/chat/completions`, {
-    method: 'POST',
-    headers: apiHeaders(),
-    body: JSON.stringify({
-      model: modelInput.value,
-      max_tokens: 32,
-      temperature: 0.2,
-      stream: false,
-      messages: [
-        { role: 'system', content: 'Name this story scene. Reply with only a concise title of two to six words.' },
-        { role: 'user', content: String(content || '').slice(0, 8000) }
-      ]
-    })
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => null);
-    throw new Error(error?.error?.message || `HTTP ${response.status}`);
-  }
-  const output = await response.json();
-  const proposed = output?.choices?.[0]?.message?.content;
+  const output = await XenonProviders.complete({ profile: getActiveProfile(), params: { max_tokens: 32, temperature: .2 },
+    signal: legacyQueueController?.signal,
+    messages: [{ role: 'system', content: 'Name this story scene. Reply with only a concise title of two to six words.' },
+      { role: 'user', content: String(content || '').slice(0, 8000) }] });
+  const proposed = output.content;
   const title = Array.isArray(proposed)
     ? proposed.map(part => part?.text || part?.content || '').join(' ')
     : String(proposed || '');
@@ -1322,106 +1318,21 @@ async function autoNameGeneratedScene(record, content) {
 // Stream one OpenAI-compatible chat completion. Providers that ignore stream
 // mode and return ordinary JSON still use the same callback and metrics path.
 async function openaiGen(context, params, onUpdate, settings = {}) {
+  const controller = legacyQueueController || new AbortController();
+  legacyController = controller;
   try {
+    const profile = { ...getActiveProfile(), endpoint: settings.endpoint ?? endpointInput.value, model: settings.model ?? modelInput.value };
     const startedAt = performance.now();
-    const endpoint = (settings.endpoint ?? endpointInput.value).replace(/\/$/, '');
-    const model = settings.model ?? modelInput.value;
-    const systemPrompt = settings.systemPrompt ?? systemPromptInput.value;
-    const response = await fetch(`${endpoint}/chat/completions`, {
-      method: 'POST',
-      headers: apiHeaders(),
-      body: JSON.stringify({
-        model,
-        ...params,
-        stream: true,
-        stream_options: { include_usage: true },
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: context }
-        ]
-      })
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => null);
-      throw new Error(error?.error?.message || `HTTP ${response.status}`);
-    }
-
-    let content;
-    let reasoning = '';
-    let usage;
-    if (response.body && response.headers.get('content-type')?.includes('text/event-stream')) {
-      ({ content, reasoning, usage } = await readCompletionStream(response, startedAt, onUpdate));
-    } else {
-      const output = await response.json();
-      if (output?.error) throw new Error(output.error.message || 'Generation failed.');
-      const message = output?.choices?.[0]?.message;
-      content = message?.content;
-      reasoning = readReasoningText(message);
-      usage = output?.usage;
-      if (typeof content === 'string') {
-        onUpdate?.({ content, reasoning, ...measureCompletion(content, reasoning, usage, startedAt) });
-      }
-    }
-    if (typeof content !== 'string' || !content.trim()) throw new Error('API response missing content.');
-    return {
-      content,
-      reasoning,
-      metrics: {
-        endpoint,
-        model,
-        ...measureCompletion(content, reasoning, usage, startedAt)
-      }
-    };
+    const result = await XenonProviders.complete({ profile, params, signal: controller.signal,
+      timeout: Number(document.getElementById('request-timeout').value) * 1000,
+      retries: Number(document.getElementById('retry-count').value),
+      messages: [{ role: 'system', content: settings.systemPrompt ?? systemPromptInput.value }, { role: 'user', content: context }],
+      onUpdate: update => onUpdate?.({ ...update, ...measureCompletion(update.content, update.reasoning, update.usage, startedAt) }) });
+    return { ...result, metrics: { ...result.metrics, endpoint: profile.endpoint, model: profile.model } };
   } catch (error) {
-    console.error('Generation failed:', error);
+    printTerminal(error.message || 'Generation cancelled.', 'error');
     return null;
-  }
-}
-
-// SSE lines can be split across network chunks, so incomplete text stays in
-// the buffer until a newline arrives. Usage commonly appears in a final event.
-async function readCompletionStream(response, startedAt, onUpdate) {
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let content = '';
-  let reasoning = '';
-  let usage;
-  const readLine = line => {
-    if (!line.startsWith('data:')) return;
-    const data = line.slice(5).trim();
-    if (!data || data === '[DONE]') return;
-    const event = JSON.parse(data);
-    if (event.error) throw new Error(event.error.message || 'Generation failed.');
-    if (event.usage) usage = event.usage;
-    const choice = event.choices?.[0];
-    const delta = choice?.delta?.content ?? choice?.text;
-    const reasoningDelta = readReasoningText(choice?.delta);
-    if (typeof delta === 'string' && delta) content += delta;
-    if (reasoningDelta) reasoning += reasoningDelta;
-    if ((content || reasoning) && (delta || reasoningDelta || event.usage)) {
-      onUpdate?.({ content, reasoning, ...measureCompletion(content, reasoning, usage, startedAt) });
-    }
-  };
-
-  while (true) {
-    const { value, done } = await reader.read();
-    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-    const lines = buffer.split('\n');
-    buffer = lines.pop();
-    for (const line of lines) readLine(line.trimEnd());
-    if (done) break;
-  }
-  if (buffer.trim()) readLine(buffer.trimEnd());
-  return { content, reasoning, usage };
-}
-
-function readReasoningText(part) {
-  const value = part?.reasoning_content ?? part?.reasoning ?? part?.thinking;
-  if (typeof value === 'string') return value;
-  if (typeof value?.content === 'string') return value.content;
-  if (Array.isArray(value)) return value.map(item => item?.text || item?.content || '').join('');
-  return '';
+  } finally { legacyController = null; }
 }
 
 function measureCompletion(content, reasoning, usage, startedAt) {
@@ -1444,11 +1355,11 @@ function apiHeaders() {
   };
 }
 
-// Store the small provider configuration in localStorage. Story records stay
+// Store the small provider configuration in XenonStorage.settings. Story records stay
 // in OPFS and are never mixed into this configuration object.
 function loadConfig() {
   try {
-    const config = JSON.parse(localStorage.getItem('config')) || {};
+    const config = JSON.parse(XenonStorage.settings.getItem('config')) || {};
     endpointInput.value = config.endpoint || '';
     apiKeyInput.value = config.apiKey || '';
     modelInput.value = config.model || '';
@@ -1464,7 +1375,7 @@ function loadConfig() {
 }
 
 function saveConfig() {
-  localStorage.setItem('config', JSON.stringify({
+  XenonStorage.settings.setItem('config', JSON.stringify({
     endpoint: endpointInput.value,
     apiKey: apiKeyInput.value,
     model: modelInput.value,
@@ -1473,19 +1384,20 @@ function saveConfig() {
     baseGenerationParams: getBaseGenerationParams(),
     creativeControls: globalCreativeControls
   }));
-  persistUserJson();
+  persistUserJson().catch(reportStorageError);
   setTerminalState('configuration saved');
 }
 
-init();
+// xenon-app.js starts initialization after all classic-script services are loaded.
 
 
 // Fetch the model list from an OpenAI-compatible /models endpoint and replace
 // the selector options with the IDs returned by the provider.
 async function getModels() {
-  if (!endpointInput.value) return;
+  if (!endpointInput.value && !getActiveProfile().proxy) return;
   try {
-    const response = await fetch(`${endpointInput.value.replace(/\/$/, '')}/models`, { headers: apiHeaders() });
+    const profile = getActiveProfile();
+    const response = await fetch(profile.proxy ? '/api/models?profile=' + encodeURIComponent(profile.serverProfile || 'default') : `${endpointInput.value.replace(/\/$/, '')}/models`, { headers: profile.proxy ? {} : apiHeaders(), signal: AbortSignal.timeout(30000) });
     const result = await response.json();
     if (!response.ok) throw new Error(result?.error?.message || `HTTP ${response.status}`);
     if (!Array.isArray(result?.data)) throw new Error('Model response is missing data.');
@@ -1503,7 +1415,6 @@ function syncModelSelect() {
   modelInput.value = availableModelsSelect.value;
 }
 
-let opfsRoot;
 
 // OPFS provides private, browser-managed storage for this origin. Cherenkov
 // keeps every story record in the single "records" directory below the root.
@@ -1518,43 +1429,34 @@ async function writeJson(fileHandle, data) {
 }
 
 function getStoredConfig() {
-  try { return JSON.parse(localStorage.getItem('config')) || {}; }
+  try { return JSON.parse(XenonStorage.settings.getItem('config')) || {}; }
   catch { return {}; }
 }
 
 function buildUserData() {
   return {
-    schemaVersion: 1,
+    ...xenonData,
+    schemaVersion: 2,
     exportedAt: new Date().toISOString(),
     config: getStoredConfig(),
-    siteColor: localStorage.getItem('siteColor') || 'cyan',
+    siteColor: XenonStorage.settings.getItem('siteColor') || 'cyan',
     trackers: trackerDefinitions,
     records: recordArray
   };
 }
 
 async function persistUserJson() {
-  if (!opfsRoot) return;
-  const data = buildUserData();
-  await writeJson(await opfsRoot.getFileHandle('user.json', { create: true }), data);
-  try {
-    await fetch('/api/user', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
-  } catch {
-    // Static/offline deployments still retain the complete OPFS copy.
-  }
+  if (!workspaceStorage) return;
+  return workspaceStorage.save(buildUserData());
 }
 
 async function exportUserData() {
-  await persistUserJson();
-  const blob = new Blob([JSON.stringify(buildUserData(), null, 2)], { type: 'application/json' });
+  await flushEditor().catch(reportStorageError);
+  const blob = new Blob([JSON.stringify(cleanExport(buildUserData()), null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = 'user.json';
+  link.download = 'xenon-workspace.json';
   link.click();
   URL.revokeObjectURL(url);
   setTerminalState('data exported');
@@ -1565,30 +1467,8 @@ async function importUserData(event) {
   event.target.value = '';
   if (!file) return;
   try {
-    const data = JSON.parse(await file.text());
-    if (!Array.isArray(data.records) || !data.config || typeof data.config !== 'object') throw new Error('Invalid user.json file.');
-    for await (const handle of recordDirectory.values()) {
-      if (handle.kind === 'file' && handle.name.endsWith('.json')) await recordDirectory.removeEntry(handle.name);
-    }
-    for (const record of data.records) await saveRecord(recordDirectory, record);
-    localStorage.setItem('config', JSON.stringify(data.config));
-    localStorage.setItem('siteColor', data.siteColor || 'cyan');
-    trackerDefinitions = Array.isArray(data.trackers) ? data.trackers : [];
-    localStorage.setItem('trackers', JSON.stringify(trackerDefinitions));
-    loadConfig();
-    setSiteColor(data.siteColor || 'cyan', false);
-    currentRecord = null;
-    currentPath = '/';
-    batchLoadedScenes = [];
-    mainEditor.readOnly = false;
-    mainEditor.value = '';
-    creativeOverrideIds.clear();
-    await refreshRecords();
-    showCreativeControls(globalCreativeControls);
-    await persistUserJson();
-    renderUiState();
-    printTerminal(`Imported ${recordArray.length} record${recordArray.length === 1 ? '' : 's'}.`);
-    setTerminalState('data imported');
+    if (file.size > 25_000_000) throw new Error('Import exceeds 25 MB.');
+    await mergeWorkspace(JSON.parse(await file.text()));
   } catch (error) {
     printTerminal(`Import failed: ${error.message}`, 'error');
   }
@@ -1596,17 +1476,19 @@ async function importUserData(event) {
 
 // Record files are named <immutable-id>.json. Virtual moves only update the
 // path fields inside these files; their OPFS filenames never need to change.
-function getRecordDirectory() {
-  return opfsRoot.getDirectoryHandle('records', { create: true });
-}
-
 function getRecordHandle(recordsDirectory, id, create = false) {
   return recordsDirectory.getFileHandle(`${id}.json`, { create });
 }
 
 async function saveRecord(recordsDirectory, record) {
   if (!record) throw new TypeError('A record is required.');
-  record.id ||= crypto.randomUUID();
+  record.id ||= Xenon.uid();
+  let previous;
+  try { previous = await readJson(await getRecordHandle(recordsDirectory, record.id)); }
+  catch (error) { if (error.name !== 'NotFoundError') throw error; }
+  if (previous && previous.content !== record.content && (record.version || 0) <= (previous.version || 0)) {
+    Xenon.revision(record, previous.content || '', 'saved edit');
+  }
   await writeJson(await getRecordHandle(recordsDirectory, record.id, true), record);
 }
 
@@ -1675,6 +1557,12 @@ async function loadAllRecords(recordsDirectory) {
 }
 
 async function deleteRecord(recordsDirectory, id) {
+  // Recoverable deleted records remain in the portable workspace until deliberately removed from an export.
+  const deleted = findRecord(id);
+  if (deleted) {
+    xenonData.trash ||= [];
+    xenonData.trash.push({ ...Xenon.clone(deleted), deletedAt: new Date().toISOString() });
+  }
   try {
     // OPFS deletes entries through their parent directory. File handles can
     // read and write a record, but Chromium does not give them a remove()

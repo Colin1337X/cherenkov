@@ -1,5 +1,8 @@
 {
-  "name": "cherenkov",
+  "name": "xenon-cherenkov",
   "private": true,
-  "scripts": { "start": "node server.js" }
+  "version": "0.1.0",
+  "license": "MIT",
+  "engines": { "node": ">=22" },
+  "scripts": { "start": "node server.js", "test": "node --test tests/*.test.js" }
 }

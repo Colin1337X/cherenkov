@@ -1,118 +1,126 @@
-# Cherenkov
+# Xenon
 
-Cherenkov is a framework-free, browser-based story generator controlled through a small shell. Its runtime files are `index.html`, `styles.css`, `main.js`, `Jua-Regular.ttf`, and `VT323-Regular.ttf`. This README is documentation only.
+Xenon is a local-first, MIT-licensed creative writing extension of [Cherenkov](https://github.com/Colin1337X/cherenkov), by Colin Cho. It preserves Cherenkov's plain-text scene editor, shell, fixed story hierarchy, inherited creative controls, trackers, themes, streaming/reasoning and recursive generation, and adds a reviewed AI writing workflow.
 
-The workspace responds from wide desktop layouts down to narrow phone screens. The editor remains the primary surface, creative controls feed directly into scene prompts, and the combined terminal uses the bundled `VT323-Regular.ttf` font with a monospace fallback.
+**JavaScript, HTML, CSS and built-in Node APIs. Zero npm dependencies. No build, account, telemetry or required cloud service.**
 
-Generation streams OpenAI-compatible chat-completion deltas into the active editor. A compact token-rate indicator shows a live estimate during streaming and the provider-reported completion rate when usage metadata arrives.
+## Run
 
-Reasoning-capable providers can stream `reasoning_content`, `reasoning`, or `thinking` separately from story text. Generation settings offer an optional `reasoning_effort`; leaving it at provider default omits the field from the request.
+**Raw HTML:** open `index.html` in a modern browser. Classic scripts load directly from disk. The editor, project navigation, scratchpad, Story Bible, writing tools, terminal and JSON import/export share the same code as Node mode. Storage tries OPFS, then localStorage, then session memory. The status banner identifies the actual backend and warns when persistence is unavailable. Browser/file-origin storage can be temporary: export backups before moving files, changing browsers or closing a private session.
 
-Creative controls inherit through `global defaults → folder → book → chapter → scene`. A record stores only the values edited at that level; reset removes its local overrides. Generation instructions follow the same rule, whether edited in the panel or supplied after a generate path. Length, chaos, and tension multiply the base `max_tokens`, `temperature`, and `presence_penalty` values. Pacing and dialogue are prompt-only sliders and do not alter provider parameters; `top_p` remains the configured base value. The context slider selects the entire workspace, current folder, book, chapter, previous scene, or no story context. Custom context accepts prose or one absolute story path per line.
+Direct inference in raw HTML requires an OpenAI-compatible endpoint that accepts requests from the browser's file origin, including CORS/preflight. Browser security can prevent requests; Xenon reports failures. It does not bypass browser security. Browser API keys are accessible to that browser environment.
 
-Loading a folder, book, or chapter opens a read-only batch view of every descendant scene. Saving that view persists the container's creative-control overrides without treating the combined scene text as one document.
+**Node mode (Node 22 or newer):**
 
-Every generated scene caches the exact controls, API parameters, endpoint, model, and system prompt used for it. From a loaded scene, `generate .` regenerates using the values currently shown in the Creative Controls tab, including unsaved edits. User configuration, trackers, and records are mirrored to `user.json` in browser origin-private storage and can be imported or exported from the controls below the terminal.
+```sh
+node server.js
+```
 
-Run the built-in server so user data is persisted to the server-side `user.json` file:
+Open [Xenon on localhost](http://127.0.0.1:4173). No `npm install` is needed. `npm start` is equivalent. Node mode stores the portable workspace in `.xenon/workspace.json`; `.xenon/backups/` holds pre-write snapshots and `.xenon/jobs.json` holds background output/status. Those files and browser API keys are private data, excluded by `.gitignore` and never served as static assets. Keep backups outside the repository too.
+
+The existing root `user.json` is read as an initial legacy source when no new workspace exists; it is never overwritten. **Run one server process per data directory.** Use `PORT` and `XENON_DATA_DIR` to choose another port/directory.
+
+## First scene and writing tools
+
+1. Enter `/folder/book/chapter/scene` in **Scene path**, then **create scene and parents**. Library buttons load a scene or a read-only container batch view. The scratchpad holds writing done before a scene is created; **scratchpad** returns to it.
+2. Write in the editor. Edits autosave after a short pause where storage permits. Ctrl/Cmd+S saves; Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z undo/redo. Draft history compares and restores saved versions. Search/replace is literal text; project search opens matching scenes. Focus mode centers the editor; Escape exits it and cancels generation.
+3. Open **generation settings**, set the endpoint (for example `http://127.0.0.1:8080/v1`), optional key and model, then save. Save named endpoint profiles for different providers. Model discovery uses `/models` when supported.
+4. Select text or use the full scene. Choose Continue, Rewrite, Expand, Describe, Brainstorm, Critique or Draft. Rewrite has clarity, conciseness, description, dialogue, emotion, pacing, tone and custom presets. Supply an objective/outline/topic or explicit input. Set operation model, parameters and up to five sequential candidates as needed.
+5. **generate preview** streams into a separate preview. Review candidates and reasoning, then accept, append, reject, regenerate, copy or export. Continue appends new prose; the other prose tools replace the captured selection/full scene unless Append is chosen. Analysis and brainstorm output use Copy/Export. Edits made during generation block acceptance until you regenerate or copy the candidate yourself.
+
+Provider capabilities let you omit temperature, top-p, presence penalty, reasoning effort and streaming-usage fields, and choose `max_tokens` or `max_completion_tokens`. Configure timeouts and up to three retries before streaming; partial streams are never automatically retried. Usage and speed are shown in previews; inherited generation still shows its token-rate and reasoning indicators.
+
+The seven writing tools, extraction, continuity analysis, multiple candidates and both networking paths are implemented and tested with mock inference. **No live model/provider verification is claimed.**
+
+## Story Bible and context
+
+Each book has characters, locations, organizations, world rules, relationships, timelines, plot threads, objects, events and lore. Entries have stable IDs, aliases, descriptions, source references, JSON metadata and a status: canon, draft, speculation, outdated or contradicted.
+
+Edit entries manually or **extract candidates from scene**. Extraction is reviewable: accepting an entry stores a draft, which you can edit/promote to canon. AI output is never automatically canonical.
+
+**Context inspector** shows source selection and generated messages before sending. It combines inherited global/folder/book/chapter/scene controls, ancestor premises, preferences, relevant Bible entries, earlier/recent passages, custom sources and operation instructions. Pin/exclude optional entries and set a source budget (estimated characters/4). Omitted sources are shown; required/pinned entries that cannot fit block generation. Input and system/operation instructions add to this estimated source budget.
+
+**check structured canon** checks explicit confirmed metadata. For example, `{"alive":false}` flags a limited set of action verbs following the character's name/aliases; `{"forbiddenPhrases":["magic restores the dead"]}` flags literal rule conflicts. Findings include source passages, uncertainty and suggested manual resolution. For broader injuries, knowledge, possessions, relationships, chronology and world-rule analysis, choose the **continuity** AI operation. Neither checker automatically changes prose or guarantees semantic correctness.
+
+## Node inference proxy and background jobs
+
+Direct browser inference works in Node mode too. To keep an API key on the server and avoid endpoint CORS restrictions, configure the server before starting it. PowerShell example:
 
 ```powershell
-npm start
+$env:XENON_ENDPOINT = 'http://127.0.0.1:8080/v1'
+$env:XENON_API_KEY = 'your-key-if-needed'
+node server.js
 ```
 
-Then open `http://localhost:4173`. The server does not expose `user.json` as a public static asset. Static hosting still works and falls back to OPFS-only persistence.
+In generation settings, enable **Use Node server profile**, leave server profile ID as `default`, and enter the model. The browser endpoint/key fields are unnecessary for proxy requests. Save a named profile to retain that choice. For multiple server destinations, `XENON_PROFILES` accepts JSON such as `{"local":{"endpoint":"http://127.0.0.1:8080/v1"},"remote":{"endpoint":"https://provider.example/v1","apiKey":"..."}}`. Browser requests can select only configured IDs; they cannot choose an arbitrary proxy destination. Redirects are rejected. Upstream diagnostic bodies/headers are not relayed, and environment keys are never returned or logged.
 
-## Commands
+Under **Background jobs**, start the current operation using a server profile. Jobs continue after the browser closes. Refresh the list to review output or cancel. They never write manuscripts automatically. Jobs preserve partial output and become interrupted after server restart; automatic resumption is not implemented.
 
-Use **Up/Down** to browse commands from the current session. Returning past the newest command restores your unfinished input. **Tab** completes command names, relative or absolute story paths, flags, colors, and tracker options. When several matches exist, it fills their shared prefix and lists the choices. **Shift+Tab** moves focus out of the input; **Ctrl+L** clears terminal output.
+The server binds to `127.0.0.1` by default, rejects cross-origin API requests and unexpected Host headers, validates requests and private file paths, limits request sizes and shuts down its own generation requests gracefully. For explicit remote access, set `HOST` to the intended interface IP and `XENON_AUTH_TOKEN` to at least 24 characters; authenticate with browser HTTP Basic (any username; token as password) or Bearer for API clients. Use a trusted HTTPS reverse proxy/encrypted tunnel. No unauthenticated remote inference proxy is provided.
+
+## Terminal
+
+The original command semantics remain. Up/Down browse history, Tab completes legacy commands/paths/options, Ctrl+L clears output, and the terminal can be collapsed. Creative controls inherit through global → folder → book → chapter → scene. Loading a container shows its descendant scenes read-only; saving edits its controls. Record IDs stay stable through moves. Recursive generation supports auto-naming, missing/stale filters, dry runs, saved generation settings, reasoning and usage/rate metrics.
 
 ```text
-mkdir -p /folder/book/chapter
-touch /folder/book/chapter/scene
-load /folder/book/chapter/scene
+mkdir -p /stories/book/chapter
+touch /stories/book/chapter/scene
+load /stories/book/chapter/scene
 save
-ls /
 ls -r /
-pwd
-cd /folder/book
-mv /folder/book/chapter/scene /folder/book/chapter/new-name
-rm /folder/book/chapter/new-name
-rm -rf /folder/book
-rmdir /empty-folder
-rmdir -rf /folder/book
-generate /folder/book
-generate /folder/book "Resolve the rivalry during the storm"
-generate -r /folder/book
-generate --missing /folder/book
-generate --dry-run --stale /folder/book
-tracker new revision-state /folder/book/chapter
-tracker show
-tracker delete revision-state
-neofetch --ascii boykisser
-neofetch --ascii cherenkov
-neofetch --ascii snep
+generate --dry-run --missing /stories/book
+generate -r --missing /stories/book
+generate . "Resolve the rivalry during the storm"
+tracker new revision-state /stories/book
 color pink
-clear
+neofetch --ascii cherenkov
 help
+
+xenon help
+xenon rewrite --selection
+xenon expand --selection
+xenon describe --selection
+xenon brainstorm "plot twist"
+xenon critique /stories/book/chapter/scene
+xenon draft "Draft the confrontation from this outline…"
+xenon bible add character "Mara"
+xenon bible list
+xenon continuity /stories/book
+xenon context show
+xenon context rebuild
+xenon export /stories/book
+xenon jobs
+xenon cancel <job-id>
 ```
 
-Short flags can be combined, so `rm -rf /folder/book` is the same as
-`rm --recursive --force /folder/book`.
+New terminal writing commands use the same services and review panel as GUI writing actions. Legacy `generate` retains its immediate replace/save behavior, with recoverable prior revisions, cancellation and protection against edits made during the request. A partial failed/cancelled legacy stream is preserved in preview while restoring the original editor text. `rm`/`rmdir` retain recoverable records in trash; **restore deleted records** imports them alongside current work. See the [original Cherenkov command reference](docs/CHERENKOV.md) for aliases, flags, tracker and creative-control details.
 
-| Command | Flags |
-| --- | --- |
-| `ls` | `-r`, `--recursive` lists all descendants instead of immediate children. |
-| `mkdir` | `-p`, `--parents` creates missing folder, book, and chapter records. |
-| `mv` | `-f`, `--force` replaces an existing destination of the same type. |
-| `rm` | `-r`, `--recursive` removes containers; `-f`, `--force` suppresses missing-path errors. |
-| `rmdir` | Removes an empty folder, book, or chapter; `-r`, `--recursive` includes its descendants; `-f`, `--force` suppresses missing-path errors. |
-| `generate [flags] [path] [instruction (optional)]` | Instructions are stored on that record and inherited by its children. `-r`, `--recursive` asks the API to name generated descendant scenes; `-m`, `--missing`; `-s`, `--stale`; `-f`, `--force`; `-n`, `--dry-run`. |
-| `tracker` | `tracker new <name> [path]` creates or reopens a named tracker in that domain; `tracker show` lists coverage; `tracker delete <name>` and `tracker rm <name>` delete it. |
-| `neofetch` | `-a`, `--ascii` accepts `boykisser`, `cherenkov`, or `snep`. The flag is optional. |
-| `color` | Sets the entire site's persistent color scheme. Run it without an argument to list the palette, choose a named color, use a custom six-digit hex color such as `color #7dd3fc`, or use `reset` to restore cyan. |
+## Portable projects, backups and migration
 
-`neofetch` renders each source photo as 128-by-60 ASCII using the original sampled RGB color for every character. Flat areas use quiet dots, while detected edges move through a progressively denser symbol ramp. The larger terminal is vertically resizable and also shows the current endpoint and model, viewport, browser storage usage and quota, story-record counts, the active path and generation parameters. Its median token rate uses generation samples recorded for the currently selected endpoint and model, so switching either one starts with no matching samples.
+**Export data** saves `xenon-workspace.json`, schema v2: `records`, `config`, `trackers`, `bible`, `profiles`, context preferences/policy, revisions, scratchpad and trash. Normal config/profile API keys are omitted from exports. Manuscript text and custom metadata remain verbatim, so remove secrets typed into those fields yourself before sharing an export.
 
-Paths use the fixed hierarchy `/folder/book/chapter/scene`. OPFS stores each record as `/records/<immutable-id>.json`; moving a story node changes its virtual `path` and its descendants, not its storage filename.
+**Import data** accepts legacy Cherenkov schema v1 `user.json` and Xenon v2 exports. Validation happens before mutation; a backup is created before merging. Existing manuscripts remain; colliding folders get an `-import` suffix and imported IDs/references are remapped. Current settings win when importing into a nonempty workspace. **backup** creates a recoverable snapshot; **recover backups** lists download/import actions. Recovery merges alongside current records rather than overwriting them.
 
-Recursive generation makes a second, small API request after each successful descendant scene. The response is converted into a filesystem-safe, unique slug and moved through the normal record path logic. Naming failures leave the generated scene at its existing path.
+Old OPFS records are origin-specific. To move from the original Cherenkov localhost origin to Node mode or `file://`:
 
-Trackers are named, scoped text fields. A tracker rooted at a chapter appears in Creative Controls for that chapter and its scenes, but not elsewhere. Definitions store only the tracker name and domain; the entered text is stored on each folder, book, chapter, or scene record. Deleting a tracker removes its definition and its values from every record.
+1. Open Cherenkov at its original origin and export `user.json` using its export control.
+2. Open Xenon in the desired runtime/origin and import that file.
+3. Check scene contents/hierarchy and export a Xenon backup before removing any original data.
 
-## Architecture change
+When Xenon runs on the same browser origin as older Cherenkov, it reads the legacy immutable-ID `records/` files if no snapshot exists, backs them up and creates a v2 workspace. Original record files remain untouched. Once migrated, Xenon uses its snapshot; use exports/imports instead of alternating apps against that same OPFS data.
 
-```mermaid
-flowchart LR
-    subgraph Before[Existing prototype]
-        direction TB
-        BUI[Terminal input] --> BPARSE[String mutated as parsed command]
-        BPARSE --> BDISPATCH[Handlers nested under generate]
-        BDISPATCH --> BSTATE[Temporary pwd]
-        BDISPATCH --> BFILES[Physical file moves]
-        BDISPATCH --> BAPI[Malformed messages payload]
-    end
+Conflicts/storage failures are visible and stop further durable writes until reload. Export local work before reloading after a conflict. Browser writes use Web Locks where available; use one tab if they are unavailable. Node uses atomic replacement and ETag conflicts. Backups/revisions are retained without automatic pruning; localStorage keeps one rolling backup. The Node request limit is 25 MB per workspace; browser quotas vary.
 
-    subgraph After[Current architecture]
-        direction TB
-        AUI[Terminal input] --> APARSE[Parsed command object]
-        APARSE --> ACMD[Independent command handlers]
-        ACMD --> APATH[Persistent virtual path]
-        APATH --> ARECORDS[Canonical story records]
-        ARECORDS <--> AOPFS[OPFS records by immutable ID]
-        ARECORDS --> ACTX[Inherited scene context]
-        ACTX --> AAPI[System and user messages]
-        ABASE[Base generation settings] --> AMULT[Apply inherited multipliers]
-        ARECORDS --> AMULT
-        AMULT --> AAPI
-        AAPI --> ASTREAM[Stream text and token rate]
-        ASTREAM --> AEDITOR[Live editor reasoning and speed]
-        ASTREAM --> ARECORDS
-        ARECORDS --> ANAME[Recursive API naming]
-        ARECORDS --> ATRACK[Scoped status tracker]
-        ACMD --> ANEO[Colored neofetch renderer]
-        ARECORDS --> ANEO
-        ABROWSER[Storage quota and viewport] --> ANEO
-    end
+## Verification and scope
+
+```sh
+npm test
 ```
 
-The terminal changes navigation and records, the editor changes the loaded scene, the explorer reflects stored virtual paths, and the configuration panel supplies the OpenAI-compatible endpoint, key, model, and system prompt.
+Tests use Node's built-in runner. Real-Chromium tests run automatically when Chrome is found or `CHROME_PATH` points to a Chromium executable; otherwise that test is explicitly skipped. No npm packages or model credentials are required. The suite covers legacy records/commands/recursive auto-naming, hierarchy/inheritance, storage/migration/backups/conflicts, Bible/context/prompts/revisions, SSE/JSON/reasoning/usage/cancellation/timeouts, proxy/security, raw HTML and Node UI, persistence, safe preview rendering and mobile overflow. Browser screenshots are written to ignored `test-results/`.
+
+This initial implementation is a plain-text writing environment. It has no automatic chapter-to-scene splitting, collaborative editing, embeddings, rich text, line-level revision diff, semantic continuity guarantees or automatic interrupted-job resumption. Candidate previews are session-local until accepted/exported; background job results persist. Core legacy code remains in `main.js`, with new services modularized. Full implementation details and remaining work are in [Architecture and status](docs/ARCHITECTURE.md).
+
+## License
+
+[MIT](LICENSE), preserving Copyright (c) 2026 Colin Cho. Bundled Jua and VT323 font licenses are included under `licenses/`. Inherited neofetch image provenance is undocumented and needs verification before a public release; see [asset attribution](docs/THIRD_PARTY.md). No release has been published.
