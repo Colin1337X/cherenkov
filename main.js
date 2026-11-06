@@ -3,8 +3,8 @@
 // the terminal listener is attached so commands always have storage ready.
 async function init() {
     await initializeXenonStorage();
-    saveConfigButton.addEventListener('click', saveConfig);
-    getModelsButton.addEventListener('click', getModels);
+    saveConfigButton.addEventListener('click', guarded(saveConfig));
+    getModelsButton.addEventListener('click', guarded(getModels));
     availableModelsSelect.addEventListener('change', syncModelSelect);
     globalCreativeControls = getDefaultCreativeControls();
     setupCreativeControls();
@@ -43,15 +43,19 @@ async function init() {
         event.preventDefault();
         const command = commandInput.value.trim();
         if (!command) return;
-        commandHistory.push(command);
+        commandInput.value = '';
+        let parsed;
+        try { parsed = parseTerminalCommand(command); }
+        catch (error) { printTerminal(error.message, 'error'); return; }
+        const shown = redactTerminalCommand(parsed, command);
+        commandHistory.push(shown);
         commandHistoryIndex = commandHistory.length;
         commandHistoryDraft = '';
-        printTerminal(`${currentPath} $ ${command}`, 'command');
-        commandInput.value = '';
+        printTerminal(`${currentPath} $ ${shown}`, 'command');
         commandInput.disabled = true;
         setTerminalState('working');
         try {
-          await tokenizeCommand(command);
+          await executeCommand(parsed);
         } catch (error) {
           console.error('Command failed:', error);
           printTerminal(`Error: ${error.message}`, 'error');
@@ -59,13 +63,14 @@ async function init() {
           renderTracker();
           commandInput.disabled = false;
           setTerminalState('ready');
-          commandInput.focus();
+          if (!terminalContent.hidden && [document.body, terminalOutput].includes(document.activeElement)) commandInput.focus();
         }
       }
     });
 }
 
 const commandInput = document.getElementById("terminal-input");
+const terminalContent = document.getElementById("terminal-content");
 const mainEditor = document.getElementById("main-editor");
 const terminalOutput = document.getElementById("terminal-output");
 const currentPathElement = document.getElementById("current-path");
@@ -196,7 +201,9 @@ function completeTerminalInput() {
   const previous = parts.slice(0, active ? -1 : undefined).map(part => part[0].replace(/^(["'])(.*)\1$/, '$2'));
   const cmd = previous[0]?.toLowerCase();
   const args = previous.slice(1).filter(part => !part.startsWith('-'));
-  const commandNames = ['cd', 'clear', 'color', 'generate', 'help', 'load', 'ls', 'mkdir', 'mv', 'neofetch', 'pwd', 'rm', 'rmdir', 'save', 'touch', 'tracker', 'xenon'];
+  const commandNames = ['cd', 'clear', 'color', 'generate', 'help', 'load', 'ls', 'mkdir', 'mv', 'neofetch', 'pwd', 'rm', 'rmdir', 'save', 'touch', 'tracker'];
+  commandNames.push(...Object.keys(workspaceTerminalCommands));
+  if (!isCherenkovMode()) commandNames.push('xenon');
   const flags = {
     ls: ['-r', '--recursive'], mkdir: ['-p', '--parents'], mv: ['-f', '--force'],
     rm: ['-r', '--recursive', '-f', '--force'], rmdir: ['-r', '--recursive', '-f', '--force'],
@@ -208,8 +215,8 @@ function completeTerminalInput() {
   else if (token.startsWith('-')) candidates = flags[cmd] || [];
   else if (cmd === 'color' && !args.length) candidates = [...Object.keys(siteColors), 'reset'];
   else if (['neofetch', 'neo'].includes(cmd) && !args.length) candidates = Object.keys(neofetchArt);
-  else if (cmd === 'tracker' && !args.length) candidates = ['new', 'show', 'delete', 'rm'];
-  else if (cmd === 'tracker' && ['delete', 'rm'].includes(args[0]) && args.length === 1) {
+  else if (cmd === 'tracker' && !args.length) candidates = ['new', 'show', 'get', 'set', 'delete', 'rm'];
+  else if (cmd === 'tracker' && ['get', 'set', 'delete', 'rm'].includes(args[0]) && args.length === 1) {
     candidates = trackerDefinitions.map(tracker => tracker.name);
   } else if (
     (['cd', 'load', 'ls', 'mkdir', 'rm', 'rmdir', 'touch', 'generate', 'gen', 'g'].includes(cmd) && !args.length) ||
@@ -250,25 +257,35 @@ function completeTerminalInput() {
 
 // Turn raw terminal text into one small command object. Flags are kept
 // separate from positional arguments, and quoted values remain one argument.
-async function tokenizeCommand(command) {
-  if (command === '') {
-    return null;
-  }
+function parseTerminalCommand(command) {
   const aliases = { 'cd..': 'cd ..', '..': 'cd ..', dir: 'ls', ll: 'ls -r', md: 'mkdir', type: 'load', erase: 'rm', del: 'rm' };
-  command = aliases[command.toLowerCase()] || command;
-  const parts = command.match(/"[^"]*"|'[^']*'|\S+/g)?.map(part => part.replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, '$1$2')) || [];
+  const alias = command.toLowerCase();
+  if (Object.hasOwn(aliases, alias)) command = aliases[alias];
+  const parts = command.match(/"(?:\\.|[^"\\])*"|'[^']*'|\S+/g) || [];
+  const unquote = part => {
+    if (part.startsWith('"')) {
+      if (!/^"(?:\\.|[^"\\])*"$/.test(part)) throw new Error('Unclosed double-quoted argument.');
+      return part.slice(1, -1).replace(/\\(["\\nrt])/g, (_, char) => ({ n: '\n', r: '\r', t: '\t' }[char] ?? char));
+    }
+    if (!part.startsWith("'")) return part;
+    if (!/^'[^']*'$/.test(part)) throw new Error('Unclosed single-quoted argument.');
+    return part.slice(1, -1);
+  };
   const flags = [];
   const args = [];
+  let options = true;
   for (const part of parts.slice(1)) {
-    if (part.startsWith('--')) flags.push(part);
-    else if (/^-[^-]+$/.test(part)) flags.push(...part.slice(1).split('').map(flag => '-' + flag));
-    else args.push(part);
+    if (options && part === '--') { options = false; continue; }
+    if (options && part.startsWith('--')) flags.push(part);
+    else if (options && /^-[a-zA-Z]+$/.test(part)) flags.push(...part.slice(1).split('').map(flag => '-' + flag));
+    else args.push(unquote(part));
   }
-  return executeCommand({
-    cmd: parts[0].toLowerCase(),
-    flags,
-    args
-  });
+  return { cmd: unquote(parts[0] || '').toLowerCase(), flags, args };
+}
+
+async function tokenizeCommand(command) {
+  const parsed = parseTerminalCommand(command.trim());
+  if (parsed.cmd) return executeCommand(parsed);
 }
 
 // Dispatch one parsed command. Each branch returns after it finishes so the
@@ -598,7 +615,8 @@ async function executeCherenkovCommand({ cmd, flags, args }) {
       'neofetch [-a|--ascii] [boykisser|cherenkov|snep]\n' +
       `color <name|#RRGGBB|reset> (${Object.keys(siteColors).join(', ')})\n` +
       'clear | help\n' +
-      'Keyboard: Up/Down browse history (Down restores your draft); Tab completes commands, paths and options; Shift+Tab moves focus; Ctrl+L clears output.'
+      'Keyboard: Up/Down browse history (Down restores your draft); Tab completes commands, paths and options; Shift+Tab moves focus; Ctrl+L clears output.\n\n' +
+      workspaceTerminalHelp + (isCherenkovMode() ? '' : '\n\nUse xenon help for writing, Bible, context and jobs commands.')
     );
     return;
   }
@@ -658,6 +676,7 @@ function printTerminal(message, tone = '') {
   terminalOutput.appendChild(entry);
   terminalOutput.scrollTop = terminalOutput.scrollHeight;
   renderUiState();
+  return entry;
 }
 
 // The entire interface derives its accents, borders, text, controls, and
@@ -878,7 +897,7 @@ function formatTracker() {
   if (!trackerDefinitions.length) return 'No trackers. Use tracker new <name> [path].';
   return trackerDefinitions.map(tracker => {
     const records = recordArray.filter(record => record.path === tracker.path || isPathInside(record.path, tracker.path));
-    const filled = records.filter(record => record.trackers?.[tracker.name]?.trim()).length;
+    const filled = records.filter(record => Object.hasOwn(record.trackers || {}, tracker.name) && record.trackers[tracker.name]?.trim()).length;
     return `${tracker.name} ${tracker.path}: ${filled}/${records.length} filled`;
   }).join('\n');
 }
@@ -895,7 +914,7 @@ function renderTracker() {
     field.className = 'text-area-small';
     field.dataset.tracker = tracker.name;
     field.placeholder = `Status for ${tracker.name}`;
-    field.value = record?.trackers?.[tracker.name] || '';
+    field.value = Object.hasOwn(record?.trackers || {}, tracker.name) ? record.trackers[tracker.name] || '' : '';
     field.disabled = !record;
     label.appendChild(field);
     return label;
@@ -983,8 +1002,7 @@ function handleCreativeInput(event) {
   if (control.dataset.tracker) {
     const record = currentRecord?.path === currentPath ? currentRecord : findRecord(currentPath);
     if (!record) return;
-    record.trackers ||= {};
-    record.trackers[control.dataset.tracker] = control.value;
+    record.trackers = { ...record.trackers, [control.dataset.tracker]: control.value };
     setSaveStatus('unsaved');
     setTerminalState('tracker changed');
     return;
@@ -1007,8 +1025,7 @@ async function saveTrackerInput(event) {
   if (!name) return;
   const record = currentRecord?.path === currentPath ? currentRecord : findRecord(currentPath);
   if (!record) return;
-  record.trackers ||= {};
-  record.trackers[name] = event.target.value;
+  record.trackers = { ...record.trackers, [name]: event.target.value };
   record.updatedAt = new Date().toISOString();
   await saveRecord(recordDirectory, record);
   await refreshRecords();
@@ -1360,9 +1377,7 @@ function apiHeaders() {
 function loadConfig() {
   try {
     const config = JSON.parse(XenonStorage.settings.getItem('config')) || {};
-    endpointInput.value = config.endpoint || '';
-    apiKeyInput.value = config.apiKey || '';
-    modelInput.value = config.model || '';
+    applyProfile(config);
     systemPromptInput.value = config.systemPrompt || '';
     reasoningEffortInput.value = config.reasoningEffort || '';
     const baseParams = { ...generationBaseDefaults, ...config.baseGenerationParams };
@@ -1374,17 +1389,18 @@ function loadConfig() {
   }
 }
 
-function saveConfig() {
+async function saveConfig() {
+  const profile = getActiveProfile();
+  const active = xenonData.profiles.find(item => item.id === xenonData.activeProfile);
+  if (active) Object.assign(active, profile);
   XenonStorage.settings.setItem('config', JSON.stringify({
-    endpoint: endpointInput.value,
-    apiKey: apiKeyInput.value,
-    model: modelInput.value,
+    ...profile,
     systemPrompt: systemPromptInput.value,
     reasoningEffort: reasoningEffortInput.value,
     baseGenerationParams: getBaseGenerationParams(),
     creativeControls: globalCreativeControls
   }));
-  persistUserJson().catch(reportStorageError);
+  await persistUserJson();
   setTerminalState('configuration saved');
 }
 
@@ -1394,21 +1410,16 @@ function saveConfig() {
 // Fetch the model list from an OpenAI-compatible /models endpoint and replace
 // the selector options with the IDs returned by the provider.
 async function getModels() {
-  if (!endpointInput.value && !getActiveProfile().proxy) return;
-  try {
-    const profile = getActiveProfile();
-    const response = await fetch(profile.proxy ? '/api/models?profile=' + encodeURIComponent(profile.serverProfile || 'default') : `${endpointInput.value.replace(/\/$/, '')}/models`, { headers: profile.proxy ? {} : apiHeaders(), signal: AbortSignal.timeout(30000) });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result?.error?.message || `HTTP ${response.status}`);
-    if (!Array.isArray(result?.data)) throw new Error('Model response is missing data.');
-    availableModelsSelect.replaceChildren(
-      new Option('available models', ''),
-      ...result.data.filter(model => model.id).map(model => new Option(model.id, model.id))
-    );
-    setTerminalState(`${result.data.length} model${result.data.length === 1 ? '' : 's'}`);
-  } catch (error) {
-    console.error('Failed to fetch models:', error);
-  }
+  const profile = getActiveProfile();
+  if (!profile.endpoint && !profile.proxy) throw new Error('Set an endpoint or enable a server profile first.');
+  const response = await fetch(profile.proxy ? '/api/models?profile=' + encodeURIComponent(profile.serverProfile) : `${profile.endpoint.replace(/\/$/, '')}/models`, { headers: profile.proxy ? {} : apiHeaders(), signal: AbortSignal.timeout(30000) });
+  if (!response.ok) throw new Error(`Model discovery failed (HTTP ${response.status}).`);
+  const result = await response.json();
+  if (!Array.isArray(result?.data)) throw new Error('Model response is missing data.');
+  const models = result.data.map(model => model?.id).filter(id => typeof id === 'string' && id);
+  availableModelsSelect.replaceChildren(new Option('available models', ''), ...models.map(id => new Option(id, id)));
+  setTerminalState(`${models.length} model${models.length === 1 ? '' : 's'}`);
+  return models;
 }
 
 function syncModelSelect() {
@@ -1452,13 +1463,7 @@ async function persistUserJson() {
 
 async function exportUserData() {
   await flushEditor().catch(reportStorageError);
-  const blob = new Blob([JSON.stringify(cleanExport(buildUserData()), null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = 'xenon-workspace.json';
-  link.click();
-  URL.revokeObjectURL(url);
+  download('xenon-workspace.json', cleanExport(buildUserData()));
   setTerminalState('data exported');
 }
 
@@ -1468,7 +1473,7 @@ async function importUserData(event) {
   if (!file) return;
   try {
     if (file.size > 25_000_000) throw new Error('Import exceeds 25 MB.');
-    await mergeWorkspace(JSON.parse(await file.text()));
+    await importWorkspaceText(await file.text());
   } catch (error) {
     printTerminal(`Import failed: ${error.message}`, 'error');
   }

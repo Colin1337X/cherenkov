@@ -20,11 +20,27 @@ Open [Xenon on localhost](http://127.0.0.1:4173). No `npm install` is needed. `n
 
 The existing root `user.json` is read as an initial legacy source when no new workspace exists; it is never overwritten. **Run one server process per data directory.** Use `PORT` and `XENON_DATA_DIR` to choose another port/directory.
 
+## Workspace layout and modes
+
+On wide screens, the workspace fits in one browser window. The library, editor and writing tools scroll independently, with data actions and shortcuts at the bottom. On narrower screens, the panes reflow and sticky section links jump between them.
+
+**Creative controls** stays visible beside **Terminal** in the lower-right corner. You can also open it from the editor toolbar. The dialog contains the inherited sliders, instructions, style notes and trackers. Press Escape or choose **Close** to return to your previous control. Both shortcuts are available in focus mode.
+
+Use **Workspace mode** in the header or `mode xenon` and `mode cherenkov` in the terminal. Your browser remembers the selection for this workspace. Pure Cherenkov shows the scene editor, story paths, creative controls and generation settings. Use `ls`, `load`, `save`, `tracker` and `generate` as usual, along with shared commands such as `edit`, `controls` and `backup`. Choose Xenon for its writing tools, Story Bible, context inspector and jobs.
+
+Both views use the same projects, settings and export format. Switching modes keeps the current scene, editor text and saved Xenon data in place. An open Xenon generation preview is visible again when you switch back.
+
+### Custom CSS
+
+Open **Appearance** in the side pane and choose **Apply CSS**, or type `css edit` in the terminal. For a one-line change, try `css set ':root { --radius: 8px; }'`. Use `css show` to read the saved stylesheet and `css reset` to clear it. The stylesheet applies on top of the built-in theme in both workspace modes. It is a browser preference separate from project exports and backups.
+
+If a rule makes the interface hard to use, reopen the same page with `?safe-css=1` in the URL. This loads the built-in theme while retaining your stylesheet so you can edit or reset it. Remove the query parameter to apply the saved CSS again.
+
 ## First scene and writing tools
 
 1. Enter `/folder/book/chapter/scene` in **Scene path**, then **create scene and parents**. Library buttons load a scene or a read-only container batch view. The scratchpad holds writing done before a scene is created; **scratchpad** returns to it.
 2. Write in the editor. Edits autosave after a short pause where storage permits. Ctrl/Cmd+S saves; Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z undo/redo. Draft history compares and restores saved versions. Search/replace is literal text; project search opens matching scenes. Focus mode centers the editor; Escape exits it and cancels generation.
-3. Open **generation settings**, set the endpoint (for example `http://127.0.0.1:8080/v1`), optional key and model, then save. Save named endpoint profiles for different providers. Model discovery uses `/models` when supported.
+3. Open **generation settings**, set the endpoint (for example `http://127.0.0.1:8080/v1`), optional key and model, then save. Save named endpoint profiles for different providers. Model discovery uses `/models` when supported. Open **Creative controls** to adjust the current scene or container's inherited settings.
 4. Select text or use the full scene. Choose Continue, Rewrite, Expand, Describe, Brainstorm, Critique or Draft. Rewrite has clarity, conciseness, description, dialogue, emotion, pacing, tone and custom presets. Supply an objective/outline/topic or explicit input. Set operation model, parameters and up to five sequential candidates as needed.
 5. **generate preview** streams into a separate preview. Review candidates and reasoning, then accept, append, reject, regenerate, copy or export. Continue appends new prose; the other prose tools replace the captured selection/full scene unless Append is chosen. Analysis and brainstorm output use Copy/Export. Edits made during generation block acceptance until you regenerate or copy the candidate yourself.
 
@@ -60,7 +76,27 @@ The server binds to `127.0.0.1` by default, rejects cross-origin API requests an
 
 ## Terminal
 
-The original command semantics remain. Up/Down browse history, Tab completes legacy commands/paths/options, Ctrl+L clears output, and the terminal can be collapsed. Creative controls inherit through global → folder → book → chapter → scene. Loading a container shows its descendant scenes read-only; saving edits its controls. Record IDs stay stable through moves. Recursive generation supports auto-naming, missing/stale filters, dry runs, saved generation settings, reasoning and usage/rate metrics.
+The **Terminal** button stays in the lower-right corner, including in focus mode. Click or tap it, or press **Ctrl+backtick**, to open the panel and focus the command input. Press **Escape** from the idle terminal to close it and return to the previous control. Up/Down browse history, Tab completes commands, paths and options, and Ctrl+L clears output.
+
+Type `help` for shared workspace commands and `xenon help` for writing, Bible, context and job commands. The terminal prints manuscript text, matches, settings, context sources and generated candidates so you can work without opening another panel.
+
+| Task | Commands |
+| --- | --- |
+| Customize appearance | `color <name or hex>`, `css edit`, `css show`, `css reset` |
+| Read and edit | `cat [path]`, `edit`, `write "text"`, `append "text"`, `scratch`, `next`, `previous`, `undo`, `redo` |
+| Search and revise | `find "text" [--project]`, `select all`, `select <start> <end>`, `replace "old" "new" [--all]`, `revision list`, `revision compare 1`, `revision restore 1` |
+| Set creative controls | `controls show`, `controls set length 65`, `controls set style-guide "Past tense"`, `controls reset [key]`, `tracker set <name> "value"`, `tracker get <name>` |
+| Configure inference | `config show`, `config set endpoint http://127.0.0.1:8080/v1`, `config models`, `config set model <id>`, `config key`, `profile save "Local"`, `profile use "Local"`, `profile servers` |
+| Generate and review | `xenon set count 2`, `xenon set model <id>`, `xenon rewrite --selection "Tighten the dialogue"`, `preview list`, `preview show 1`, `preview reasoning 1`, `preview accept 1`, `preview reject`, `preview export` |
+| Maintain the Story Bible and context | `xenon bible add character "Mara"`, `xenon bible set Mara status canon`, `xenon extract`, `xenon bible candidates`, `xenon bible accept 1`, `xenon context list`, `xenon context pin <id>`, `xenon context show` |
+| Manage jobs and backups | `xenon jobs start draft`, `xenon jobs list`, `xenon jobs review <id>`, `xenon jobs cancel <id>`, `backup create`, `backup list`, `backup recover <id>`, `trash restore` |
+| Import and export | `import` opens the browser file picker. `import --paste` accepts workspace JSON inside the terminal. `export [path]` starts a browser download. |
+
+`edit` opens a multiline field inside the terminal. Press **Ctrl/Cmd+Enter** to apply or **Escape** to cancel. Double-quoted arguments support `\n` for a line break and `\"` for a quotation mark. `select` takes zero-based JavaScript string offsets, with the end offset excluded. `preview` and `revision` numbers start at one. Use `config key` for masked input. The key is omitted from terminal history, settings output and ordinary workspace exports. During a foreground generation, press **Ctrl+C** or **Escape** to cancel.
+
+For a Node inference profile, use `profile servers`, then `config set proxy on`, `config set server-profile <id>` and `config set model <id>`. Use `xenon set operation`, `xenon set instructions`, `xenon set input` and `xenon set preset` to configure `xenon run`. `xenon context budget <tokens>` and `xenon context preferences "text"` edit context settings. `xenon continuity` runs the structured check, and `xenon continuity --ai` asks the model to review the loaded scene.
+
+Creative controls inherit through global → folder → book → chapter → scene. Loading a container shows its descendant scenes read-only, and saving edits its controls. Record IDs stay stable through moves. Recursive generation supports auto-naming, missing/stale filters, dry runs, saved generation settings, reasoning and usage/rate metrics.
 
 ```text
 mkdir -p /stories/book/chapter
@@ -93,7 +129,7 @@ xenon jobs
 xenon cancel <job-id>
 ```
 
-New terminal writing commands use the same services and review panel as GUI writing actions. Legacy `generate` retains its immediate replace/save behavior, with recoverable prior revisions, cancellation and protection against edits made during the request. A partial failed/cancelled legacy stream is preserved in preview while restoring the original editor text. `rm`/`rmdir` retain recoverable records in trash; **restore deleted records** imports them alongside current work. See the [original Cherenkov command reference](docs/CHERENKOV.md) for aliases, flags, tracker and creative-control details.
+The `xenon` commands are available in Xenon mode and share the writing tools' review panel. Legacy `generate` retains its immediate replace/save behavior in both modes, with recoverable prior revisions, cancellation and protection against edits made during the request. A partial failed/cancelled legacy stream is preserved in preview while restoring the original editor text. `rm`/`rmdir` retain recoverable records in trash; **restore deleted records** imports them alongside current work. See the [original Cherenkov command reference](docs/CHERENKOV.md) for aliases, flags, tracker and creative-control details.
 
 ## Portable projects, backups and migration
 

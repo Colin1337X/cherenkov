@@ -5,31 +5,89 @@
         <meta name="theme-color" content="#0187e0">
         <title>Xenon · Cherenkov writing workspace</title>
         <link rel="stylesheet" href="styles.css">
+        <style id="workspace-custom-css"></style>
         <script src="core/xenon.js" defer></script>
         <script src="ai/providers.js" defer></script>
         <script src="adapters/browser-storage.js" defer></script>
         <script src="main.js" defer></script>
+        <script src="core/workspace-terminal.js" defer></script>
         <script src="xenon-app.js" defer></script>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
     </head>
     <body>
         <div class="container">
-            <header class="app-header">
-                <div>
-                    <p class="eyebrow">the Cherenkov creative writing workspace</p>
-                    <h1 class="title">xenon</h1>
-                </div>
-                <div class="header-status" aria-live="polite">
-                    <span id="current-path">/</span>
-                    <span id="editor-status">0 words · 0 characters</span>
-                    <span id="tracker-status" hidden></span>
-                </div>
-            </header>
+            <div class="workspace-heading">
+                <header class="app-header">
+                    <div>
+                        <p class="eyebrow" id="workspace-tagline">the Cherenkov creative writing workspace</p>
+                        <h1 class="title" id="workspace-name">xenon</h1>
+                    </div>
+                    <div class="header-status" aria-live="polite">
+                        <span id="current-path">/</span>
+                        <span id="editor-status">0 words · 0 characters</span>
+                        <span id="tracker-status" hidden></span>
+                    </div>
+                    <label class="workspace-mode">Workspace mode
+                        <select class="input-field" id="workspace-mode">
+                            <option value="xenon">Xenon</option>
+                            <option value="cherenkov">Pure Cherenkov</option>
+                        </select>
+                    </label>
+                </header>
 
-            <p id="storage-warning" class="notice" role="status" hidden></p>
-            <p id="runtime-status" class="eyebrow" aria-live="polite">opening workspace…</p>
+                <p id="storage-warning" class="notice" role="status" hidden></p>
+                <p id="runtime-status" class="eyebrow" aria-live="polite">opening workspace…</p>
+            </div>
+            <nav class="workspace-nav" aria-label="Workspace sections">
+                <a class="quiet-button" href="#workspace-editor">Editor</a>
+                <a class="quiet-button xenon-only" href="#project-library">Library</a>
+                <a class="quiet-button xenon-only" href="#writing-tools">Writing tools</a>
+                <a class="quiet-button cherenkov-only" href="#explorer">Story paths</a>
+            </nav>
             <main class="workspace">
-                <aside class="library-sidebar panel" aria-label="Project library">
+                <section class="panel editor-panel" id="workspace-editor" aria-label="Scene editor" tabindex="-1">
+                    <div class="panel-heading">
+                        <div>
+                            <p class="eyebrow">scene editor</p>
+                            <h2 id="editor-title">no scene loaded</h2>
+                        </div>
+                        <div class="editor-indicators">
+                            <span class="token-speed" id="token-speed" hidden>0.0 tok/s</span>
+                            <span class="status-pill" id="save-status">ready</span>
+                        </div>
+                    </div>
+                    <div class="toolbar" aria-label="Editor actions">
+                        <button id="save-scene" class="quiet-button" type="button">save</button>
+                        <button id="recover-scratch" class="quiet-button xenon-only" type="button">scratchpad</button>
+                        <button id="undo-edit" class="quiet-button xenon-only" type="button">undo</button>
+                        <button id="redo-edit" class="quiet-button xenon-only" type="button">redo</button>
+                        <button id="previous-scene" class="quiet-button xenon-only" type="button">previous scene</button>
+                        <button id="next-scene" class="quiet-button xenon-only" type="button">next scene</button>
+                        <button id="open-creative-controls" class="quiet-button" type="button" aria-haspopup="dialog" aria-controls="creative-controls">Creative controls</button>
+                        <button id="focus-mode" class="quiet-button" type="button" aria-pressed="false">focus mode</button>
+                    </div>
+                    <details class="editor-search xenon-only"><summary>Search and replace</summary>
+                        <div class="field-stack"><label>Find<input id="search-text" class="input-field"></label><label>Replace with<input id="replace-text" class="input-field"></label>
+                        <div class="toolbar"><button id="find-next" class="quiet-button" type="button">find next</button><button id="replace-one" class="quiet-button" type="button">replace selection</button><button id="replace-all" class="quiet-button" type="button">replace all</button><button id="search-project" class="quiet-button" type="button">search project</button></div><div id="search-results"></div></div>
+                    </details>
+                    <details class="reasoning-panel" id="reasoning-panel" hidden>
+                        <summary>provider reasoning</summary>
+                        <pre id="reasoning-output"></pre>
+                    </details>
+                    <textarea class="resizable-text-area" placeholder="Load or create a scene, then begin writing…" id="main-editor" aria-label="Story editor"></textarea>
+                    <details id="revision-panel" class="xenon-only"><summary>Draft history and comparison</summary><div id="revision-list" class="field-stack"></div><div class="comparison"><pre id="revision-before" aria-label="Previous revision"></pre><pre id="revision-after" aria-label="Current revision"></pre></div></details>
+                    <section id="preview-panel" class="preview-panel" aria-label="Generation preview" hidden>
+                        <h2>generation preview</h2><p id="preview-status" role="status"></p>
+                        <label>Candidate<select id="candidate-select" class="input-field"></select></label>
+                        <textarea id="generation-preview" class="text-area-small" aria-label="Generated candidate" readonly></textarea>
+                        <details><summary>Compare with source</summary><pre id="preview-source"></pre></details>
+                        <details><summary>Provider reasoning</summary><pre id="preview-reasoning"></pre></details>
+                        <div class="toolbar"><button id="accept-candidate" class="quiet-button" type="button">accept replacement</button><button id="append-candidate" class="quiet-button" type="button">append</button><button id="reject-candidate" class="quiet-button" type="button">reject</button><button id="regenerate-candidate" class="quiet-button xenon-only" type="button">regenerate</button><button id="copy-candidate" class="quiet-button" type="button">copy</button><button id="export-candidate" class="quiet-button" type="button">export candidate</button></div>
+                        <div id="extraction-review" class="field-stack"></div>
+                    </section>
+                </section>
+
+                <aside class="library-sidebar panel xenon-only" id="project-library" aria-label="Project library" tabindex="-1">
                     <h2>library</h2>
                     <form id="create-scene-form" class="field-stack">
                         <label>Scene path<input id="new-scene-path" class="input-field" value="/stories/my-book/chapter-1/scene-1" required aria-label="New scene path"></label>
@@ -54,49 +112,9 @@
                         <button class="quiet-button" id="extract-bible" type="button">extract candidates from scene</button>
                     </details>
                 </aside>
-                <section class="panel editor-panel">
-                    <div class="panel-heading">
-                        <div>
-                            <p class="eyebrow">scene editor</p>
-                            <h2 id="editor-title">no scene loaded</h2>
-                        </div>
-                        <div class="editor-indicators">
-                            <span class="token-speed" id="token-speed" hidden>0.0 tok/s</span>
-                            <span class="status-pill" id="save-status">ready</span>
-                        </div>
-                    </div>
-                    <div class="toolbar" aria-label="Editor actions">
-                        <button id="save-scene" class="quiet-button" type="button">save</button>
-                        <button id="recover-scratch" class="quiet-button" type="button">scratchpad</button>
-                        <button id="undo-edit" class="quiet-button" type="button">undo</button>
-                        <button id="redo-edit" class="quiet-button" type="button">redo</button>
-                        <button id="previous-scene" class="quiet-button" type="button">previous scene</button>
-                        <button id="next-scene" class="quiet-button" type="button">next scene</button>
-                        <button id="focus-mode" class="quiet-button" type="button" aria-pressed="false">focus mode</button>
-                    </div>
-                    <details class="editor-search"><summary>Search and replace</summary>
-                        <div class="field-stack"><label>Find<input id="search-text" class="input-field"></label><label>Replace with<input id="replace-text" class="input-field"></label>
-                        <div class="toolbar"><button id="find-next" class="quiet-button" type="button">find next</button><button id="replace-one" class="quiet-button" type="button">replace selection</button><button id="replace-all" class="quiet-button" type="button">replace all</button><button id="search-project" class="quiet-button" type="button">search project</button></div><div id="search-results"></div></div>
-                    </details>
-                    <details class="reasoning-panel" id="reasoning-panel" hidden>
-                        <summary>provider reasoning</summary>
-                        <pre id="reasoning-output"></pre>
-                    </details>
-                    <textarea class="resizable-text-area" placeholder="Load or create a scene, then begin writing…" id="main-editor" aria-label="Story editor"></textarea>
-                    <details id="revision-panel"><summary>Draft history and comparison</summary><div id="revision-list" class="field-stack"></div><div class="comparison"><pre id="revision-before" aria-label="Previous revision"></pre><pre id="revision-after" aria-label="Current revision"></pre></div></details>
-                    <section id="preview-panel" class="preview-panel" aria-label="Generation preview" hidden>
-                        <h2>generation preview</h2><p id="preview-status" role="status"></p>
-                        <label>Candidate<select id="candidate-select" class="input-field"></select></label>
-                        <textarea id="generation-preview" class="text-area-small" aria-label="Generated candidate" readonly></textarea>
-                        <details><summary>Compare with source</summary><pre id="preview-source"></pre></details>
-                        <details><summary>Provider reasoning</summary><pre id="preview-reasoning"></pre></details>
-                        <div class="toolbar"><button id="accept-candidate" class="quiet-button" type="button">accept replacement</button><button id="append-candidate" class="quiet-button" type="button">append</button><button id="reject-candidate" class="quiet-button" type="button">reject</button><button id="regenerate-candidate" class="quiet-button" type="button">regenerate</button><button id="copy-candidate" class="quiet-button" type="button">copy</button><button id="export-candidate" class="quiet-button" type="button">export candidate</button></div>
-                        <div id="extraction-review" class="field-stack"></div>
-                    </section>
-                </section>
 
                 <aside class="sidebar">
-                    <section class="panel field-stack" id="writing-tools">
+                    <section class="panel field-stack xenon-only" id="writing-tools" aria-label="Writing tools" tabindex="-1">
                         <h2>writing tools</h2>
                         <p class="hint">Select a passage or use the full scene. Results stay in preview until accepted.</p>
                         <label>Operation<select id="writing-operation" class="input-field"><option>continue</option><option>rewrite</option><option>expand</option><option>describe</option><option>brainstorm</option><option>critique</option><option>draft</option><option>continuity</option></select></label>
@@ -110,14 +128,14 @@
                         <pre id="continuity-results" class="result-text" aria-live="polite"></pre>
                         <details><summary>Background jobs (Node)</summary><button id="start-job" class="quiet-button" type="button">start current operation as job</button><button id="refresh-jobs" class="quiet-button" type="button">refresh jobs</button><div id="jobs-list" class="field-stack"></div></details>
                     </section>
-                    <details class="panel" id="context-panel">
+                    <details class="panel xenon-only" id="context-panel">
                         <summary>Context inspector</summary>
                         <label>Budget (estimated tokens)<input id="context-budget" class="input-field" type="number" min="128" max="131072" value="6000"></label>
                         <label>Global writing preferences<textarea id="writing-preferences" class="text-area-small"></textarea></label>
                         <button id="inspect-context" class="quiet-button" type="button">rebuild and inspect</button>
                         <p id="context-summary" role="status"></p><div id="context-entries" class="field-stack"></div><pre id="context-output" class="result-text"></pre>
                     </details>
-                    <section class="panel explorer-panel" id="explorer">
+                    <section class="panel explorer-panel" id="explorer" aria-label="Story paths" tabindex="-1">
                         <div class="panel-heading compact">
                             <div>
                                 <p class="eyebrow">library</p>
@@ -127,57 +145,17 @@
                         <pre class="text" id="explorer-content">no records yet</pre>
                     </section>
 
-                    <section class="panel" id="creative-controls">
-                        <div class="panel-heading compact">
-                            <div>
-                                <p class="eyebrow">generation</p>
-                                <h2>creative controls</h2>
+                    <details class="panel config-panel" id="appearance-settings">
+                        <summary>Appearance</summary>
+                        <form id="custom-css-form" class="config-fields">
+                            <label>Custom CSS<textarea class="text-area-small" id="custom-css" rows="6" maxlength="65536" spellcheck="false" placeholder=":root { --radius: 8px; }"></textarea></label>
+                            <p class="hint" id="custom-css-status" role="status"></p>
+                            <div class="button-row">
+                                <button class="button" type="submit">Apply CSS</button>
+                                <button class="button secondary" id="reset-custom-css" type="button">Reset CSS</button>
                             </div>
-                            <button class="quiet-button" id="reset-creative-controls" type="button">reset</button>
-                        </div>
-
-                        <div class="range-grid">
-                            <label class="range-control" for="length">
-                                <span>length <output data-value-for="length">1.05×</output></span>
-                                <input type="range" class="slider" id="length" min="0" max="100" value="55" data-default="55">
-                            </label>
-                            <label class="range-control" for="pacing">
-                                <span>pacing <output data-value-for="pacing">moderate</output></span>
-                                <input type="range" class="slider" id="pacing" min="0" max="100" value="50" data-default="50">
-                            </label>
-                            <label class="range-control" for="chaos">
-                                <span>chaos <output data-value-for="chaos">0.85×</output></span>
-                                <input type="range" class="slider" id="chaos" min="0" max="100" value="35" data-default="35">
-                            </label>
-                            <label class="range-control" for="dialogue-share">
-                                <span>dialogue <output data-value-for="dialogue-share">40%</output></span>
-                                <input type="range" class="slider" id="dialogue-share" min="0" max="100" value="40" data-default="40">
-                            </label>
-                            <label class="range-control" for="tension">
-                                <span>tension <output data-value-for="tension">1.10×</output></span>
-                                <input type="range" class="slider" id="tension" min="0" max="100" value="60" data-default="60">
-                            </label>
-                            <label class="range-control context-scope-control" for="context-scope">
-                                <span>story context <output data-value-for="context-scope">current book</output></span>
-                                <input type="range" class="slider" id="context-scope" min="0" max="5" step="1" value="2" data-default="2" list="context-scope-options">
-                                <datalist id="context-scope-options">
-                                    <option value="0" label="workspace"></option><option value="1" label="folder"></option><option value="2" label="book"></option>
-                                    <option value="3" label="chapter"></option><option value="4" label="previous"></option><option value="5" label="none"></option>
-                                </datalist>
-                            </label>
-                        </div>
-
-                        <div class="context-grid">
-                            <label>generation instructions<textarea class="text-area-small" id="generation-instructions" placeholder="What should happen in generated scenes?"></textarea></label>
-                            <label>custom context sources<textarea class="text-area-small" id="custom-context-sources" placeholder="Paste notes, paths, excerpts, or any extra context to include"></textarea></label>
-                            <label>core hook<textarea class="text-area-small" id="premise-corehook" placeholder="What makes this story matter?"></textarea></label>
-                            <label>style guide<textarea class="text-area-small" id="style-guide" placeholder="Voice, tense, tone, and prose rules"></textarea></label>
-                            <label>world rules<textarea class="text-area-small" id="world-rules-constraints" placeholder="Constraints the story must obey"></textarea></label>
-                            <label>characters<textarea class="text-area-small" id="character-ledger-and-arcs" placeholder="Cast, motivations, and current arcs"></textarea></label>
-                        </div>
-                        <div class="context-grid" id="tracker-controls" hidden></div>
-                    </section>
-
+                        </form>
+                    </details>
                     <details class="panel config-panel" id="config-box">
                         <summary>generation settings</summary>
                         <div class="config-fields">
@@ -226,28 +204,88 @@
                 </aside>
             </main>
 
-            <section class="terminal-shell" aria-label="Cherenkov terminal">
+            <dialog class="panel" id="creative-controls" aria-labelledby="creative-controls-title">
+                <div class="panel-heading compact">
+                    <div>
+                        <p class="eyebrow">generation</p>
+                        <h2 id="creative-controls-title">Creative controls</h2>
+                    </div>
+                    <div class="toolbar">
+                        <button class="quiet-button" id="reset-creative-controls" type="button">reset</button>
+                        <button class="quiet-button" id="close-creative-controls" type="button">Close</button>
+                    </div>
+                </div>
+                <div class="creative-fields">
+                    <div class="range-grid">
+                        <label class="range-control" for="length">
+                            <span>length <output data-value-for="length">1.05×</output></span>
+                            <input type="range" class="slider" id="length" autofocus min="0" max="100" value="55" data-default="55">
+                        </label>
+                        <label class="range-control" for="pacing">
+                            <span>pacing <output data-value-for="pacing">moderate</output></span>
+                            <input type="range" class="slider" id="pacing" min="0" max="100" value="50" data-default="50">
+                        </label>
+                        <label class="range-control" for="chaos">
+                            <span>chaos <output data-value-for="chaos">0.85×</output></span>
+                            <input type="range" class="slider" id="chaos" min="0" max="100" value="35" data-default="35">
+                        </label>
+                        <label class="range-control" for="dialogue-share">
+                            <span>dialogue <output data-value-for="dialogue-share">40%</output></span>
+                            <input type="range" class="slider" id="dialogue-share" min="0" max="100" value="40" data-default="40">
+                        </label>
+                        <label class="range-control" for="tension">
+                            <span>tension <output data-value-for="tension">1.10×</output></span>
+                            <input type="range" class="slider" id="tension" min="0" max="100" value="60" data-default="60">
+                        </label>
+                        <label class="range-control context-scope-control" for="context-scope">
+                            <span>story context <output data-value-for="context-scope">current book</output></span>
+                            <input type="range" class="slider" id="context-scope" min="0" max="5" step="1" value="2" data-default="2" list="context-scope-options">
+                            <datalist id="context-scope-options">
+                                <option value="0" label="workspace"></option><option value="1" label="folder"></option><option value="2" label="book"></option>
+                                <option value="3" label="chapter"></option><option value="4" label="previous"></option><option value="5" label="none"></option>
+                            </datalist>
+                        </label>
+                    </div>
+
+                    <div class="context-grid">
+                        <label>generation instructions<textarea class="text-area-small" id="generation-instructions" placeholder="What should happen in generated scenes?"></textarea></label>
+                        <label>custom context sources<textarea class="text-area-small" id="custom-context-sources" placeholder="Paste notes, paths, excerpts, or any extra context to include"></textarea></label>
+                        <label>core hook<textarea class="text-area-small" id="premise-corehook" placeholder="What makes this story matter?"></textarea></label>
+                        <label>style guide<textarea class="text-area-small" id="style-guide" placeholder="Voice, tense, tone, and prose rules"></textarea></label>
+                        <label>world rules<textarea class="text-area-small" id="world-rules-constraints" placeholder="Constraints the story must obey"></textarea></label>
+                        <label>characters<textarea class="text-area-small" id="character-ledger-and-arcs" placeholder="Cast, motivations, and current arcs"></textarea></label>
+                    </div>
+                    <div class="context-grid" id="tracker-controls" hidden></div>
+                </div>
+            </dialog>
+
+            <section class="terminal-shell" aria-label="Terminal and workspace shortcuts">
                 <div class="terminal-bar">
-                    <button id="toggle-terminal" class="quiet-button" type="button" aria-expanded="true">terminal · collapse</button>
+                    <button id="dock-creative-controls" class="quiet-button" type="button" aria-haspopup="dialog" aria-controls="creative-controls">Creative controls</button>
+                    <button id="toggle-terminal" class="quiet-button" type="button" aria-controls="terminal-content" aria-expanded="false" aria-keyshortcuts="Control+`" title="Toggle terminal (Ctrl+`)">Terminal</button>
                     <span id="terminal-state" aria-live="polite">ready</span>
                 </div>
-                <div class="terminal-output" id="terminal-output" role="log" aria-live="polite" aria-label="Terminal output"></div>
-                <label class="terminal-input-row">
-                    <span aria-hidden="true">›</span>
-                    <input type="text" id="terminal-input" aria-label="Terminal command. Up and Down for history, Tab to autocomplete." title="Up/Down: history · Tab: autocomplete · Shift+Tab: move focus" autocomplete="off" spellcheck="false" placeholder="help · ↑↓ history · Tab complete">
-                </label>
+                <div id="terminal-content" hidden>
+                    <div class="terminal-output" id="terminal-output" role="log" aria-live="polite" aria-label="Terminal output" tabindex="0"></div>
+                    <label class="terminal-input-row">
+                        <span aria-hidden="true">›</span>
+                        <input type="text" id="terminal-input" aria-label="Terminal command. Up and Down for history, Tab to autocomplete." title="Up/Down: history · Tab: autocomplete · Shift+Tab: move focus" autocomplete="off" spellcheck="false" placeholder="help · ↑↓ history · Tab complete">
+                    </label>
+                </div>
             </section>
 
-            <section class="data-tools" aria-label="User data">
-                <button class="quiet-button" id="import-data-button" type="button">import data</button>
-                <button class="quiet-button" id="export-data-button" type="button">export data</button>
-                <button class="quiet-button" id="make-backup" type="button">backup</button>
-                <button class="quiet-button" id="show-backups" type="button">recover backups</button>
-                <button class="quiet-button" id="restore-trash" type="button">restore deleted records</button>
-                <input id="import-data-input" type="file" accept="application/json,.json" hidden>
-            </section>
-            <section id="backups-list" class="field-stack" aria-label="Recoverable backups" hidden></section>
-            <footer class="center-text">made with ❤️‍🔥 by colin</footer>
+            <div class="workspace-footer">
+                <section class="data-tools" aria-label="User data">
+                    <button class="quiet-button" id="import-data-button" type="button">import data</button>
+                    <button class="quiet-button" id="export-data-button" type="button">export data</button>
+                    <button class="quiet-button" id="make-backup" type="button">backup</button>
+                    <button class="quiet-button" id="show-backups" type="button">recover backups</button>
+                    <button class="quiet-button" id="restore-trash" type="button">restore deleted records</button>
+                    <input id="import-data-input" type="file" accept="application/json,.json" hidden>
+                </section>
+                <section id="backups-list" class="field-stack" aria-label="Recoverable backups" hidden></section>
+                <footer class="center-text">made with ❤️‍🔥 by colin</footer>
+            </div>
         </div>
     </body>
 </html>

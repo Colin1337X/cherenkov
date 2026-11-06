@@ -15,6 +15,7 @@ Legacy OPFS data uses `records/<immutable-id>.json`. Virtual paths are fixed at 
 | `core/xenon.js` | Portable schema v2, validation/migration, hierarchy/inheritance, revisions, guarded acceptance, Bible schema, deterministic retrieval, structured continuity, operation prompts |
 | `ai/providers.js` | Capability-aware chat requests, SSE/JSON parsing, reasoning, usage/speed, timeouts, cancellation, bounded retries |
 | `adapters/browser-storage.js` | Runtime detection, OPFS/localStorage/memory fallbacks, safe settings, legacy record migration, snapshot persistence, backup/recovery, optimistic conflicts, Web Locks when available |
+| `core/workspace-terminal.js` | Command adapters for editing, inference settings, candidate review, Bible and context management, jobs, imports, recovery and appearance |
 | `adapters/node-storage.js` | Serialized native filesystem commits, version checks, atomic replacement, recoverable backups |
 | `core/jobs.js` | Persistent Node job status/output, checkpoints, cancellation, interrupted-job recovery |
 | `main.js` | Preserved Cherenkov editor, controls, hierarchy commands, trackers, themes and terminal; delegates storage and networking |
@@ -60,14 +61,16 @@ Node background jobs persist server-side, checkpoint partial output every two se
 - Browser credentials are accessible to the browser profile and local workspace storage. Exports omit normal config/profile API keys; secrets typed into manuscript/metadata remain manuscript content. Node environment keys never enter frontend settings.
 - Remote binding requires explicit HOST and strong authentication; place it behind a trusted HTTPS reverse proxy or encrypted tunnel. A dedicated reverse-proxy deployment mode and user/role management are not included.
 - The legacy script remains large, though new pure services are separated and independently tested. Further extraction should preserve the compatibility suite.
-- The inherited neofetch image provenance is unresolved; see `THIRD_PARTY.md`. This work did not publish a release or push the Xenon implementation branch.
+- The inherited neofetch image provenance is unresolved. See `THIRD_PARTY.md`.
+
+Workspace mode and custom CSS use the browser settings adapter. They are separate from project snapshots, so opening a backup or importing a project does not apply a stylesheet. The Appearance form and terminal commands share a single stylesheet. The `safe-css` URL parameter skips application for that page load while preserving the saved text.
 
 ## File inventory and verification
 
 Modified: `README.md`, `index.html`, `styles.css`, `main.js`, `server.js`, `package.json`.
 
-Created: `.gitignore`, `core/xenon.js`, `core/jobs.js`, `ai/providers.js`, `adapters/browser-storage.js`, `adapters/node-storage.js`, `xenon-app.js`, `tests/fixtures.js`, `tests/core.test.js`, `tests/browser-storage.test.js`, `tests/server.test.js`, `tests/browser.test.js`, `docs/CHERENKOV.md`, `docs/ARCHITECTURE.md`, `docs/THIRD_PARTY.md`, `licenses/jua-OFL.txt`, `licenses/vt323-OFL.txt`.
+Created: `.gitignore`, `core/xenon.js`, `core/jobs.js`, `core/workspace-terminal.js`, `ai/providers.js`, `adapters/browser-storage.js`, `adapters/node-storage.js`, `xenon-app.js`, `tests/fixtures.js`, `tests/core.test.js`, `tests/browser-storage.test.js`, `tests/server.test.js`, `tests/browser.test.js`, `docs/CHERENKOV.md`, `docs/ARCHITECTURE.md`, `docs/THIRD_PARTY.md`, `licenses/jua-OFL.txt`, `licenses/vt323-OFL.txt`.
 
 `LICENSE`, both bundled font binaries, and the original `user.json` remain unchanged. The baseline local changes were committed and pushed first as `c4c804a`; Xenon work is isolated on `codex/xenon`.
 
-On November 5, 2026, `npm test` passed all 24 tests with no skips, using Node v25.5.0 and locally installed headless Chrome. Tests include actual `file://` loading and Node HTTP/browser operation, real mock-provider streaming/proxying, recursive generation/naming, cancellation with original-text restoration, JSON import collisions/preferences/scratch preservation, reload persistence, mobile overflow and screenshots. Node HTTP tests cover auth, origin/Host rejection, private/static path restrictions, request validation/size limits, destination restrictions, redirection rejection, backups/ETags, jobs/cancellation/restart status and key non-disclosure. `git diff --check` passed. No real-provider credentials were used.
+On November 6, 2026, `npm test` passed all 25 tests with no skips, using Node and headless Chrome. Browser tests cover direct `file://` loading, Node mode, terminal-only workflows, recursive generation, cancellation, import recovery, viewport layouts and custom CSS persistence, safe mode and reset. HTTP tests cover auth, origin and Host checks, private paths, request validation, destination restrictions, backups, jobs and key handling. Inference tests use local mock providers. `git diff --check` passed.
