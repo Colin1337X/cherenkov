@@ -63,6 +63,7 @@
                         <button id="redo-edit" class="quiet-button xenon-only" type="button">redo</button>
                         <button id="previous-scene" class="quiet-button xenon-only" type="button">previous scene</button>
                         <button id="next-scene" class="quiet-button xenon-only" type="button">next scene</button>
+                        <button id="describe-selection" class="quiet-button xenon-only" type="button">Describe selection</button>
                         <button id="open-creative-controls" class="quiet-button" type="button" aria-haspopup="dialog" aria-controls="creative-controls">Creative controls</button>
                         <button id="focus-mode" class="quiet-button" type="button" aria-pressed="false">focus mode</button>
                     </div>
@@ -80,6 +81,7 @@
                         <h2>generation preview</h2><p id="preview-status" role="status"></p>
                         <label>Candidate<select id="candidate-select" class="input-field"></select></label>
                         <textarea id="generation-preview" class="text-area-small" aria-label="Generated candidate" readonly></textarea>
+                        <div id="description-results" class="field-stack" aria-label="Sensory description suggestions" hidden></div>
                         <details><summary>Compare with source</summary><pre id="preview-source"></pre></details>
                         <details><summary>Provider reasoning</summary><pre id="preview-reasoning"></pre></details>
                         <div class="toolbar"><button id="accept-candidate" class="quiet-button" type="button">accept replacement</button><button id="append-candidate" class="quiet-button" type="button">append</button><button id="reject-candidate" class="quiet-button" type="button">reject</button><button id="regenerate-candidate" class="quiet-button xenon-only" type="button">regenerate</button><button id="copy-candidate" class="quiet-button" type="button">copy</button><button id="export-candidate" class="quiet-button" type="button">export candidate</button></div>
@@ -118,6 +120,11 @@
                         <h2>writing tools</h2>
                         <p class="hint">Select a passage or use the full scene. Results stay in preview until accepted.</p>
                         <label>Operation<select id="writing-operation" class="input-field"><option>continue</option><option>rewrite</option><option>expand</option><option>describe</option><option>brainstorm</option><option>critique</option><option>draft</option><option>continuity</option></select></label>
+                        <fieldset id="describe-options" class="describe-options">
+                            <legend>Describe senses</legend>
+                            <div id="describe-senses" class="sense-options"></div>
+                            <p class="hint">Describe generates separate suggestions for each enabled sense. Candidate count sets the variations per sense.</p>
+                        </fieldset>
                         <label>Rewrite objective<select id="rewrite-preset" class="input-field"><option>Clarity</option><option>Conciseness</option><option>More descriptive prose</option><option>More natural dialogue</option><option>Stronger emotion</option><option>Faster pacing</option><option>Slower pacing</option><option>Different tone</option><option>Custom instructions</option></select></label>
                         <label>Instructions / outline / brainstorm topic<textarea id="writing-instructions" class="text-area-small" placeholder="Plot, motivation, dialogue, setting, conflict, twist, title, ending…"></textarea></label>
                         <label>Explicit input (optional)<textarea id="writing-input" class="text-area-small" placeholder="Leave empty to use the selection or scene"></textarea></label>

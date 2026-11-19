@@ -42,11 +42,35 @@ If a rule makes the interface hard to use, reopen the same page with `?safe-css=
 2. Write in the editor. Edits autosave after a short pause where storage permits. Ctrl/Cmd+S saves; Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z undo/redo. Draft history compares and restores saved versions. Search/replace is literal text; project search opens matching scenes. Focus mode centers the editor; Escape exits it and cancels generation.
 3. Open **generation settings**, set the endpoint (for example `http://127.0.0.1:8080/v1`), optional key and model, then save. Save named endpoint profiles for different providers. Model discovery uses `/models` when supported. Open **Creative controls** to adjust the current scene or container's inherited settings.
 4. Select text or use the full scene. Choose Continue, Rewrite, Expand, Describe, Brainstorm, Critique or Draft. Rewrite has clarity, conciseness, description, dialogue, emotion, pacing, tone and custom presets. Supply an objective/outline/topic or explicit input. Set operation model, parameters and up to five sequential candidates as needed.
-5. **generate preview** streams into a separate preview. Review candidates and reasoning, then accept, append, reject, regenerate, copy or export. Continue appends new prose; the other prose tools replace the captured selection/full scene unless Append is chosen. Analysis and brainstorm output use Copy/Export. Edits made during generation block acceptance until you regenerate or copy the candidate yourself.
+5. **generate preview** streams into a separate preview. Review candidates and reasoning, then accept, insert, append, reject, regenerate, copy or export. Continue appends new prose. Rewrite, Expand and Draft replace the captured selection or full scene. Describe offers individual details to insert or use as replacements. Analysis and brainstorm output use Copy/Export. Edits made during generation block acceptance until you regenerate or copy the candidate yourself.
 
 Provider capabilities let you omit temperature, top-p, presence penalty, reasoning effort and streaming-usage fields, and choose `max_tokens` or `max_completion_tokens`. Configure timeouts and up to three retries before streaming; partial streams are never automatically retried. Usage and speed are shown in previews; inherited generation still shows its token-rate and reasoning indicators.
 
 The seven writing tools, extraction, continuity analysis, multiple candidates and both networking paths are implemented and tested with mock inference. **No live model/provider verification is claimed.**
+
+### Describe
+
+Highlight a word, phrase or passage in the manuscript and choose **Describe selection** in the editor toolbar. You can also choose **describe** under Writing tools, or supply a subject through **Explicit input**. Enable the categories you want in **Describe senses**. Choices include sight, sound, smell, touch, taste and metaphor, and at least one must remain enabled. Your choices are saved with the workspace and travel in project exports.
+
+Results appear as separate sensory suggestions in the preview. Each suggestion has **Copy**, **Insert after selection**, **Replace selection** and **Regenerate this sense** actions. You can insert several suggestions in succession. Describe preserves the source text until you choose an action, saves prior revisions, and blocks insertion if you edit the manuscript after generation. With explicit input and no highlighted passage, suggestions are applied at the captured caret position.
+
+Describe uses the highlighted paragraph and up to 200 words before it, along with the normal story context, style and instructions. The context inspector includes the first sense's request. Each enabled sense uses a separate streaming inference request. **Variations per sense** controls how many options to generate for each category. For example, three enabled senses and two variations produce six options. Cancellation retains the partial results for review and stops the remaining requests. Background Describe jobs take one selected sense at a time.
+
+The same workflow is available through the terminal.
+
+```text
+select 23 29
+xenon set senses sight,sound,metaphor
+xenon describe --selection "Keep the atmosphere uneasy"
+preview list
+preview show 1
+preview insert 1
+preview insert 2
+```
+
+Use `xenon set senses all` to enable every category. A one-off request such as `xenon describe --selection --senses=smell,touch` overrides the saved senses for that generation. `preview accept <number>` replaces the captured selection and `preview insert <number>` adds the detail after it. `preview regenerate` regenerates the current Describe categories for the original subject. Once you change the manuscript yourself, select the subject again to start a fresh request.
+
+Xenon's implementation follows the sensory-description workflow described in Sudowrite's public documentation and uses your configured inference endpoint. [Workflow reference](https://docs.sudowrite.com/using-sudowrite/1ow1qkGqof9rtcyGnrWUBS/describe/aTHZdZBjRmH8AspqrPdPcP)
 
 ## Story Bible and context
 

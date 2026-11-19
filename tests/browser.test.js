@@ -461,3 +461,95 @@ test('terminal-only writing, configuration, review and recovery in both runtimes
   }
   assert.deepEqual(errors, []);
 });
+
+test('Describe offers per-sense suggestions, safe insertions and terminal parity in both runtimes', { timeout: 60000 }, async t => {
+  const browser = await launch(t); if (!browser) return;
+  const { evaluate, navigate, send, errors } = browser;
+  const requests = [];
+  const mock = http.createServer(async (request, response) => {
+    response.setHeader('Access-Control-Allow-Origin', '*');
+    response.setHeader('Access-Control-Allow-Headers', 'content-type');
+    if (request.method === 'OPTIONS') return response.writeHead(204).end();
+    let text = '';
+    for await (const chunk of request) text += chunk;
+    const body = JSON.parse(text), input = JSON.parse(body.messages.at(-1).content);
+    requests.push(input);
+    response.setHeader('Content-Type', 'text/event-stream');
+    const content = `${input.descriptionSense} detail.`;
+    response.write(`data: ${JSON.stringify({ choices: [{ delta: { content, reasoning_content: 'Consider the passage.' } }] })}\n\n`);
+    if (body.model !== 'slow') response.end('data: [DONE]\n\n');
+  });
+  mock.listen(0, '127.0.0.1'); await once(mock, 'listening');
+  t.after(() => { mock.closeAllConnections(); return new Promise(resolve => mock.close(resolve)); });
+  const endpoint = 'http://127.0.0.1:' + mock.address().port + '/v1';
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'xenon-describe-'));
+  const app = await createApp({ dataDir: directory, profiles: { default: { endpoint } } });
+  const address = await app.listen(0);
+  t.after(async () => { await app.close(); await fs.rm(directory, { recursive: true, force: true }); });
+  async function waitFor(expression) {
+    for (let i = 0; i < 200; i++) { if (await evaluate(expression)) return; await delay(10); }
+    assert.fail('Timed out waiting for ' + expression);
+  }
+  const original = workspace().records[3].content;
+  const urls = [pathToFileURL(path.resolve(__dirname, '../index.html')).href, 'http://127.0.0.1:' + address.port];
+  for (const [node, url] of urls.entries()) {
+    await navigate(url);
+    await evaluate(`mergeWorkspace(${JSON.stringify(workspace())})`);
+    await evaluate("tokenizeCommand('load /stories/book/chapter/scene')");
+    await evaluate(`endpointInput.value = ${JSON.stringify(endpoint)}; modelInput.value = 'mock'; byId('use-proxy').checked = ${Boolean(node)}`);
+    await evaluate("byId('writing-operation').value = 'describe'; byId('writing-operation').dispatchEvent(new Event('change', { bubbles: true }))");
+    assert.equal(await evaluate('readDescriptionSenses().length'), 6);
+    await evaluate("setDescriptionSenses(['sight'])");
+    await evaluate("byId('describe-senses').querySelector('input[value=sight]').click()");
+    assert.equal(await evaluate("byId('describe-senses').querySelector('input[value=sight]').checked"), true);
+    assert.match(await evaluate('terminalOutput.textContent'), /Choose at least one/);
+    await evaluate("byId('describe-senses').querySelector('input[value=sound]').click(); workspaceStorage.drain()");
+    const before = requests.length;
+    await evaluate("const start = mainEditor.value.indexOf('garden'); mainEditor.setSelectionRange(start, start + 6); byId('describe-selection').click()");
+    await waitFor("preview?.candidates.length === 2 && !activeOperation");
+    assert.deepEqual(requests.slice(before).map(input => input.descriptionSense), ['sight', 'sound']);
+    assert(requests.slice(before).every(input => input.inputText === 'garden' && input.passageContext === original));
+    assert.equal(await evaluate('mainEditor.value'), original);
+    assert.equal(await evaluate("byId('description-results').querySelectorAll('.description-card').length"), 2);
+    assert.match(await evaluate("byId('description-results').textContent"), /Sight · Option 1/);
+    if (node) {
+      await send('Emulation.setDeviceMetricsOverride', { width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false });
+      await evaluate("byId('preview-panel').scrollIntoView({ block: 'start' })");
+      await fs.mkdir(path.resolve(__dirname, '../test-results'), { recursive: true });
+      const screenshot = await send('Page.captureScreenshot', { format: 'png' });
+      await fs.writeFile(path.resolve(__dirname, '../test-results/describe-desktop.png'), Buffer.from(screenshot.data, 'base64'));
+    }
+    await evaluate("byId('description-results').querySelector('button').click()");
+    await waitFor('Boolean(preview.candidates[0].accepted)');
+    assert.equal(await evaluate('mainEditor.value'), original.replace('garden', 'garden sight detail.'));
+    await evaluate("tokenizeCommand('preview insert 2')");
+    assert.equal(await evaluate('mainEditor.value'), original.replace('garden', 'garden sight detail. sound detail.'));
+    const duplicate = await evaluate("tokenizeCommand('preview insert 2').then(() => '', error => error.message)");
+    assert.match(duplicate, /already been used/);
+    await evaluate("regenerateDescription('sound')");
+    assert.equal(requests.at(-1).descriptionSense, 'sound');
+    assert.equal(requests.at(-1).inputText, 'garden');
+    assert.equal(await evaluate('preview.candidates.length'), 1);
+    await evaluate("updateManuscript(mainEditor.value + ' User edit.')");
+    assert.match(await evaluate("tokenizeCommand('preview accept 1').then(() => '', error => error.message)"), /editor changed/);
+    await evaluate("tokenizeCommand('xenon set senses smell,metaphor')");
+    await evaluate("tokenizeCommand('xenon set count 2')");
+    await evaluate("mainEditor.setSelectionRange(mainEditor.value.indexOf('garden'), mainEditor.value.indexOf('garden') + 6); tokenizeCommand('xenon describe --selection --senses=taste')");
+    assert.equal(requests.at(-1).descriptionSense, 'taste');
+    assert.equal(await evaluate('preview.candidates.length'), 2);
+    assert.match(await evaluate("byId('description-results').textContent"), /Taste · Option 2/);
+    assert.deepEqual(await evaluate('readDescriptionSenses()'), ['smell', 'metaphor']);
+    await evaluate("tokenizeCommand('xenon set count 1')");
+    await evaluate("byId('operation-model').value = 'slow'; globalThis.descriptionRequest = runWriting(captureOperation('describe')); 'started'");
+    await waitFor('Boolean(activeOperation && preview.candidates[0]?.content)');
+    const pending = requests.length;
+    await evaluate('cancelGeneration(); globalThis.descriptionRequest');
+    assert.equal(requests.length, pending);
+    assert.equal(await evaluate('preview.candidates.length'), 1);
+    assert.equal(await evaluate('mainEditor.value.endsWith(" User edit.")'), true);
+    await navigate(url);
+    assert.deepEqual(await evaluate('readDescriptionSenses()'), ['smell', 'metaphor']);
+    assert.equal(await evaluate("findRecord('scene-1').content.endsWith(' User edit.')"), true);
+  }
+  assert.deepEqual(errors, []);
+});

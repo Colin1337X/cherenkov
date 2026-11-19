@@ -229,6 +229,7 @@ async function mergeWorkspace(input) {
   currentRecord = null; currentPath = '/'; batchLoadedScenes = []; creativeOverrideIds.clear(); mainEditor.value = ''; mainEditor.readOnly = false;
   editorDirty = false; lastEditorText = ''; showCreativeControls(globalCreativeControls); renderUiState(); renderXenon(); refreshProfileOptions();
   byId('writing-preferences').value = xenonData.preferences || ''; byId('context-budget').value = xenonData.contextBudget || 6000;
+  showDescriptionSenses(xenonData.describeSenses);
   const profile = xenonData.profiles.find(p => p.id === xenonData.activeProfile);
   if (profile) { byId('endpoint-profile').value = profile.id; applyProfile(profile); }
   printTerminal(`Imported ${incoming.records.length} records. Existing records preserved${renames.size ? '; colliding folders renamed with -import' : ''}.`);
@@ -302,11 +303,36 @@ function applyProfile(profile) {
   byId('retry-count').value = profile.retries ?? 0;
 }
 function loadOperationModel() {
-  byId('operation-model').value = xenonData.operationModels?.[byId('writing-operation').value] || '';
+  const operation = byId('writing-operation').value;
+  byId('operation-model').value = xenonData.operationModels?.[operation] || '';
+  byId('describe-options').hidden = operation !== 'describe';
+  byId('rewrite-preset').parentElement.hidden = operation !== 'rewrite';
+  byId('candidate-count').parentElement.firstChild.textContent = operation === 'describe' ? 'Variations per sense' : 'Candidates';
 }
 async function saveOperationModel() {
   xenonData.operationModels ||= {};
   xenonData.operationModels[byId('writing-operation').value] = byId('operation-model').value;
+  await persistUserJson();
+}
+function readDescriptionSenses() {
+  return Xenon.normalizeDescriptionSenses([...byId('describe-senses').querySelectorAll('input:checked')].map(field => field.value));
+}
+function showDescriptionSenses(value) {
+  let senses;
+  try { senses = Xenon.normalizeDescriptionSenses(value); }
+  catch { senses = Xenon.normalizeDescriptionSenses(); }
+  byId('describe-senses').replaceChildren(...Object.entries(Xenon.descriptionSenses).map(([id, name]) => {
+    const label = document.createElement('label');
+    const field = document.createElement('input');
+    field.type = 'checkbox'; field.value = id; field.checked = senses.includes(id);
+    label.append(field, document.createTextNode(name));
+    return label;
+  }));
+}
+async function setDescriptionSenses(value) {
+  const senses = Xenon.normalizeDescriptionSenses(value);
+  showDescriptionSenses(senses);
+  xenonData.describeSenses = senses;
   await persistUserJson();
 }
 async function selectEndpointProfile(id) {
@@ -329,13 +355,14 @@ async function saveEndpointProfile(name) {
   byId('endpoint-profile').value = profile.id;
   return profile;
 }
-function captureOperation(operation = byId('writing-operation').value, instructions, record = currentRecord) {
+function captureOperation(operation = byId('writing-operation').value, instructions, record = currentRecord, options = {}) {
   if (record?.type !== 'scene') throw new Error('Load a scene first.');
   const isCurrent = record.id === currentRecord?.id;
   const text = isCurrent ? mainEditor.value : record.content;
-  const start = isCurrent ? mainEditor.selectionStart : 0, end = isCurrent ? mainEditor.selectionEnd : text.length;
+  const start = options.range?.start ?? (isCurrent ? mainEditor.selectionStart : 0);
+  const end = options.range?.end ?? (isCurrent ? mainEditor.selectionEnd : text.length);
   const hasSelection = end > start;
-  const source = byId('writing-input').value || (hasSelection ? text.slice(start, end) : text);
+  const source = options.input ?? (byId('writing-input').value || (hasSelection ? text.slice(start, end) : text));
   const objective = instructions ?? [operation === 'rewrite' ? byId('rewrite-preset').value : '', byId('writing-instructions').value].filter(Boolean).join('\n');
   const controls = isCurrent ? readCreativeControls() : resolveCreativeControls(record);
   const context = Xenon.selectContext({ records: recordArray, bible: xenonData.bible, scene: record, input: source, instructions: objective, controls,
@@ -345,7 +372,12 @@ function captureOperation(operation = byId('writing-operation').value, instructi
   const operationModel = operation === byId('writing-operation').value ? byId('operation-model').value : xenonData.operationModels?.[operation];
   profile.model = operationModel || profile.model;
   return { operation, input: source, instructions: objective, context, profile, params: getGenerationParams(controls),
-    snapshot: { id: record.id, version: record.version || 0, content: text, epoch: editorEpoch, start: hasSelection ? start : 0, end: hasSelection ? end : text.length },
+    ...(operation === 'describe' && {
+      describeSenses: Xenon.normalizeDescriptionSenses(options.describeSenses ?? readDescriptionSenses()),
+      passageContext: hasSelection ? Xenon.descriptionPassage(text, start, end) : ''
+    }),
+    snapshot: { id: record.id, version: record.version || 0, content: text, epoch: editorEpoch,
+      start: hasSelection || operation === 'describe' ? start : 0, end: hasSelection || operation === 'describe' ? end : text.length },
     path: record.path, book: Xenon.bookPath(record.path), count: Math.max(1, Math.min(5, Number(byId('candidate-count').value) || 1)), system: systemPromptInput.value };
 }
 async function saveContextSettings() {
@@ -370,6 +402,32 @@ function inspectContext(run = captureOperation()) {
   byId('context-output').textContent = run.context.blocked ? run.context.text : JSON.stringify(Xenon.prompt(run), null, 2);
 }
 function selectedCandidate() { return preview?.candidates[Number(byId('candidate-select').value) || 0]; }
+function candidateLabel(candidate, index) {
+  return candidate.sense ? `${Xenon.descriptionSenses[candidate.sense]} · Option ${candidate.variation}` : `Candidate ${index + 1}`;
+}
+function renderDescriptionCards() {
+  const results = byId('description-results');
+  results.hidden = preview?.run.operation !== 'describe';
+  if (results.hidden) { results.replaceChildren(); return; }
+  results.replaceChildren(...preview.candidates.map((candidate, index) => {
+    const card = document.createElement('section'); card.className = 'description-card';
+    card.append(textNode('h3', candidateLabel(candidate, index)), textNode('p', candidate.content || 'Generating…'));
+    const actions = document.createElement('div'); actions.className = 'toolbar';
+    function useCandidate(action) {
+      return async () => {
+        byId('candidate-select').value = String(index);
+        return action();
+      };
+    }
+    const insert = button(candidate.accepted ? 'Used' : 'Insert after selection', useCandidate(() => acceptCandidate('insert-after')));
+    const replace = button('Replace selection', useCandidate(() => acceptCandidate('replace')));
+    insert.disabled = replace.disabled = Boolean(activeOperation || !candidate.content || candidate.accepted);
+    actions.append(insert, replace, button('Copy', useCandidate(copyCandidate)), button('Regenerate this sense', useCandidate(() => regenerateDescription(candidate.sense))));
+    if (activeOperation) actions.lastElementChild.disabled = true;
+    card.append(actions);
+    return card;
+  }));
+}
 function renderPreview() {
   byId('preview-panel').hidden = !preview || (isCherenkovMode() && !preview.run.legacy);
   if (!preview) return;
@@ -378,10 +436,13 @@ function renderPreview() {
   byId('preview-reasoning').textContent = candidate?.reasoning || '';
   byId('preview-source').textContent = preview.run.input;
   const analysis = ['critique', 'brainstorm', 'extract', 'continuity'].includes(preview.run.operation);
-  const disabled = Boolean(activeOperation || !candidate?.content || analysis);
+  const disabled = Boolean(activeOperation || !candidate?.content || analysis || candidate.accepted);
   byId('accept-candidate').disabled = disabled; byId('append-candidate').disabled = disabled;
   byId('regenerate-candidate').disabled = Boolean(preview.run.legacy || activeOperation);
   byId('accept-candidate').textContent = preview.run.operation === 'continue' ? 'accept continuation' : 'accept replacement';
+  byId('append-candidate').textContent = preview.run.operation === 'describe' ? 'insert after selection' : 'append';
+  byId('generation-preview').hidden = preview.run.operation === 'describe';
+  renderDescriptionCards();
 }
 function makePreview(run) {
   preview = { run, candidates: [] }; byId('extraction-review').replaceChildren();
@@ -395,26 +456,33 @@ async function runWriting(run, onUpdate) {
   const latest = findRecord(run.snapshot.id);
   if (latest?.content !== run.snapshot.content) throw new Error('The scene changed. Start a new operation.');
   run.snapshot.version = latest.version || 0;
-  const messages = Xenon.prompt(run);
+  Xenon.prompt(run); // Validate important context and input before replacing the current preview.
   inspectContext(run); lastRun = run; makePreview(run);
   const controller = new AbortController(); activeOperation = controller;
   const job = { id: Xenon.uid(), operation: run.operation, status: 'running' }; browserJobs.set(job.id, job);
+  const requests = [];
+  const senses = run.operation === 'describe' ? run.describeSenses : [null];
+  for (const sense of senses) {
+    for (let variation = 1; variation <= run.count; variation++) requests.push({ sense, variation });
+  }
   try {
-    for (let index = 0; index < run.count; index++) {
+    for (const [index, request] of requests.entries()) {
       controller.signal.throwIfAborted();
-      const candidate = { content: '', reasoning: '' }; preview.candidates.push(candidate);
-      byId('candidate-select').append(new Option(`Candidate ${index + 1}`, String(index))); byId('candidate-select').value = String(index);
+      const candidate = { content: '', reasoning: '', ...request }; preview.candidates.push(candidate);
+      const label = candidateLabel(candidate, index);
+      byId('candidate-select').append(new Option(label, String(index))); byId('candidate-select').value = String(index);
       const startedAt = performance.now();
+      const messages = Xenon.prompt({ ...run, descriptionSense: request.sense });
       const output = await XenonProviders.complete({ profile: run.profile, messages, params: run.params, signal: controller.signal,
         timeout: Number(byId('request-timeout').value) * 1000, retries: Number(byId('retry-count').value),
         onUpdate(update) {
           Object.assign(candidate, update); renderPreview();
           onUpdate?.(update, index);
           const metrics = measureCompletion(update.content, update.reasoning, update.usage, startedAt);
-          byId('preview-status').textContent = `Streaming candidate ${index + 1}/${run.count} · ${metrics.tokensPerSecond.toFixed(1)} tok/s`;
+          byId('preview-status').textContent = `${label} streaming · ${index + 1}/${requests.length} · ${metrics.tokensPerSecond.toFixed(1)} tok/s`;
         } });
       Object.assign(candidate, output);
-      byId('preview-status').textContent = `Candidate ${index + 1}/${run.count} ready · ${output.metrics.completionTokens} tokens · ${output.metrics.tokensPerSecond.toFixed(1)} tok/s`;
+      byId('preview-status').textContent = `${label} ready · ${index + 1}/${requests.length} · ${output.metrics.completionTokens} tokens · ${output.metrics.tokensPerSecond.toFixed(1)} tok/s`;
     }
     job.status = 'completed';
     if (run.operation === 'extract') renderExtraction();
@@ -429,7 +497,17 @@ function rejectCandidate() {
 function regenerateCandidate(onUpdate) {
   if (preview?.run.legacy) throw new Error('Use generate to rerun legacy generation.');
   if (!lastRun) throw new Error('Generate a Xenon candidate first.');
+  if (lastRun.operation === 'describe') return regenerateDescription(undefined, onUpdate);
   return runWriting(captureOperation(lastRun.operation, lastRun.instructions), onUpdate);
+}
+function regenerateDescription(sense, onUpdate) {
+  if (lastRun?.operation !== 'describe') throw new Error('Generate descriptions first.');
+  if (currentRecord?.id !== lastRun.snapshot.id || mainEditor.value !== lastRun.snapshot.content) throw new Error('The manuscript changed. Select the subject again and run Describe.');
+  const run = captureOperation('describe', lastRun.instructions, currentRecord, {
+    input: lastRun.input, range: lastRun.snapshot,
+    describeSenses: sense ? [sense] : lastRun.describeSenses
+  });
+  return runWriting(run, onUpdate);
 }
 async function copyCandidate() {
   const content = selectedCandidate()?.content;
@@ -453,16 +531,27 @@ async function copyCandidate() {
 async function acceptCandidate(mode) {
   if (activeOperation) throw new Error('Finish or cancel streaming before accepting.');
   const candidate = selectedCandidate(); if (!candidate?.content) return;
+  if (candidate.accepted) throw new Error('This suggestion has already been used.');
   const run = preview.run;
   if (['critique', 'brainstorm', 'extract', 'continuity'].includes(run.operation)) throw new Error('Use Copy or Export for analysis and idea output.');
   if (currentRecord?.id !== run.snapshot.id || editorEpoch !== run.snapshot.epoch || mainEditor.value !== run.snapshot.content) throw new Error('The editor changed since this preview. Copy the result or regenerate.');
   await flushEditor();
   const record = findRecord(run.snapshot.id);
-  Xenon.accept(record, run.snapshot, candidate.content, mode || (run.operation === 'continue' ? 'append' : 'replace'));
+  const applyMode = mode || (run.operation === 'continue' ? 'append' : 'replace');
+  const originalEnd = run.snapshot.end;
+  Xenon.accept(record, run.snapshot, candidate.content, applyMode);
   const previous = mainEditor.value;
   currentRecord = record; mainEditor.value = record.content; markEdit(previous);
   await saveRecord(recordDirectory, record); await flushEditor();
   byId('preview-status').textContent = 'Accepted. The previous text is available in Draft history and Undo.';
+  if (run.operation === 'describe') {
+    candidate.accepted = true;
+    const end = applyMode === 'insert-after' ? originalEnd + 1 + candidate.content.length
+      : applyMode === 'append' ? record.content.length : run.snapshot.start + candidate.content.length;
+    run.snapshot = { ...run.snapshot, content: record.content, version: record.version || 0, epoch: editorEpoch, end };
+    renderPreview();
+    return;
+  }
   renderRevisions(); preview = null; renderPreview();
 }
 function showLegacyCandidate(record, generation) {
@@ -514,17 +603,22 @@ function reviewJob(job) {
   const operation = job.label?.split(' ')[0];
   const run = captureOperation(Object.hasOwn(Xenon.operations, operation) ? operation : 'draft');
   makePreview(run);
-  preview.candidates.push({ content: job.content, reasoning: job.reasoning || '' });
-  byId('candidate-select').append(new Option('Job output', '0'));
+  const sense = job.label?.match(/ \[describe:([a-z]+)\]$/)?.[1];
+  const candidate = { content: job.content, reasoning: job.reasoning || '',
+    ...(sense && Object.hasOwn(Xenon.descriptionSenses, sense) && { sense, variation: 1 }) };
+  preview.candidates.push(candidate);
+  byId('candidate-select').append(new Option(candidate.sense ? candidateLabel(candidate, 0) : 'Job output', '0'));
   byId('preview-status').textContent = 'Background output. Review before applying to this scene.';
   renderPreview();
 }
 async function startBackgroundJob(operation) {
   if (workspaceStorage.mode !== 'node') throw new Error('Persistent background jobs require Node mode. Browser generation works while the page remains open.');
   await flushEditor(); const run = captureOperation(operation);
+  if (run.operation === 'describe' && run.describeSenses.length !== 1) throw new Error('Choose one Describe sense for a background job. Foreground Describe generates all enabled senses.');
   if (!run.profile.proxy) throw new Error('Choose a Node server profile for background jobs.');
   const response = await fetch('/api/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile: run.profile.serverProfile,
-    body: XenonProviders.requestBody(run.profile, Xenon.prompt(run), run.params), label: run.operation + ' ' + run.path }) });
+    body: XenonProviders.requestBody(run.profile, Xenon.prompt(run), run.params),
+    label: run.operation + ' ' + run.path + (run.operation === 'describe' ? ` [describe:${run.describeSenses[0]}]` : '') }) });
   if (!response.ok) throw new Error('Job could not start. Check the server profile and active requests.');
   const job = await response.json(); printTerminal(`Started job ${job.id}. Use xenon jobs to review it.`); await jobsList();
   return job;
@@ -593,6 +687,19 @@ async function setupXenon() {
   applyWorkspaceMode(XenonStorage.settings.getItem('xenon-workspace-mode'));
   bind('workspace-mode', event => setWorkspaceMode(event.target.value), 'change');
   applyCustomCss(XenonStorage.settings.getItem('xenon-custom-css') || '');
+  showDescriptionSenses(xenonData.describeSenses);
+  bind('describe-senses', async event => {
+    try { await setDescriptionSenses(readDescriptionSenses()); }
+    catch (error) {
+      if (event.target.type === 'checkbox') event.target.checked = true;
+      throw error;
+    }
+  }, 'change');
+  bind('describe-selection', () => {
+    byId('writing-operation').value = 'describe';
+    loadOperationModel();
+    return runWriting(captureOperation('describe'));
+  });
   bind('custom-css-form', event => {
     event.preventDefault();
     saveCustomCss(byId('custom-css').value);
@@ -666,7 +773,8 @@ async function setupXenon() {
   }, 'submit');
   bind('bible-new', () => editBible()); bind('extract-bible', () => runWriting(captureOperation('extract')));
   bind('run-writing', () => runWriting()); bind('cancel-writing', () => cancelGeneration());
-  bind('accept-candidate', () => acceptCandidate()); bind('append-candidate', () => acceptCandidate('append'));
+  bind('accept-candidate', () => acceptCandidate());
+  bind('append-candidate', () => acceptCandidate(preview?.run.operation === 'describe' ? 'insert-after' : 'append'));
   bind('reject-candidate', rejectCandidate);
   bind('regenerate-candidate', () => regenerateCandidate());
   bind('candidate-select', () => { renderPreview(); if (preview?.run.operation === 'extract' && !activeOperation) renderExtraction(); }, 'change');

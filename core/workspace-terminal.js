@@ -103,7 +103,7 @@ select [all|clear|start end] | find <text> [--project] | replace <find> <replace
 undo | redo | next | previous | revision list|show|compare|restore [number]
 controls show|set <key> <value>|reset [key] | tracker get|set <name> [value]
 config show|set <key> <value>|save|models|key [clear] | profile list|servers|save <name>|use <id or name>|current
-preview list|show|select|source|reasoning|accept|append|reject|regenerate|copy|export [number]
+preview list|show|select|source|reasoning|accept|insert|append|reject|regenerate|copy|export [number]
 import [--paste] | export [path] | backup create|list|recover <id>|download <id> | trash list|restore
 cancel [job-id]. During a foreground generation, Ctrl+C or Escape cancels.
 Use double quotes for text with spaces and \\n for a line break. Use edit to enter or paste multiple lines.`;
@@ -316,7 +316,7 @@ function streamToTerminal() {
   const entries = [];
   return (update, index) => {
     const entry = entries[index] ||= printTerminal(`Candidate ${index + 1} streaming…`);
-    entry.textContent = `Candidate ${index + 1}\n${update.content || '(waiting for prose)'}\n`;
+    entry.textContent = `${candidateLabel(preview.candidates[index], index)}\n${update.content || '(waiting for prose)'}\n`;
     terminalOutput.scrollTop = terminalOutput.scrollHeight;
   };
 }
@@ -331,7 +331,7 @@ async function terminalPreview([action = 'list', index]) {
     return terminalPreviewResult();
   }
   if (!preview?.candidates.length) throw new Error('No candidates to review.');
-  if (action === 'list') return printTerminal(preview.candidates.map((candidate, i) => `${i + 1} · ${candidate.content?.length || 0} characters${candidate === selectedCandidate() ? ' (selected)' : ''}`).join('\n'));
+  if (action === 'list') return printTerminal(preview.candidates.map((candidate, i) => `${i + 1} · ${candidate.content?.length || 0} characters · ${candidateLabel(candidate, i)}${candidate.accepted ? ' (used)' : ''}${candidate === selectedCandidate() ? ' (selected)' : ''}`).join('\n'));
   if (action === 'select' || index !== undefined) {
     byId('candidate-select').value = String(terminalInteger(index, 1, preview.candidates.length, 'Candidate number') - 1);
     renderPreview();
@@ -341,9 +341,9 @@ async function terminalPreview([action = 'list', index]) {
   if (action === 'select' || action === 'show') return printTerminal(candidate.content || '(empty)');
   if (action === 'source') return printTerminal(preview.run.input || '(empty)');
   if (action === 'reasoning') return printTerminal(candidate.reasoning || 'No provider reasoning.');
-  if (action === 'accept' || action === 'append') {
+  if (action === 'accept' || action === 'append' || action === 'insert') {
     if (!candidate.content) throw new Error('This candidate is empty.');
-    await acceptCandidate(action === 'append' ? 'append' : undefined);
+    await acceptCandidate(action === 'insert' ? 'insert-after' : action === 'append' ? 'append' : undefined);
     return printTerminal('Candidate accepted.');
   }
   if (action === 'reject') { rejectCandidate(); return printTerminal('Candidate rejected.'); }
@@ -355,7 +355,8 @@ async function terminalPreview([action = 'list', index]) {
 const xenonTerminalHelp = `Xenon commands:
 xenon continue|rewrite|expand|describe|brainstorm|critique|draft|extract [path] [instructions] [--selection]
 xenon continuity [path] [--ai] | xenon run
-xenon set operation|preset|instructions|input|model|count <value> | xenon settings
+xenon set operation|preset|instructions|input|model|count|senses <value> | xenon settings
+xenon describe [path] [instructions] [--selection] [--senses=sight,sound,smell,touch,taste,metaphor]
 xenon preview <action> [number] (same as preview)
 xenon bible list [--all] | show <id or name> | add <type> <name> | set <id or name> <field> <value>
 xenon bible candidates | accept <number>
@@ -367,9 +368,13 @@ const writingFields = { operation: 'writing-operation', preset: 'rewrite-preset'
 
 async function xenonCommand({ args: [action = 'help', ...args], flags }) {
   if (action === 'help') return printTerminal(xenonTerminalHelp);
-  if (action === 'settings') return printTerminal(Object.entries(writingFields).map(([key, id]) => `${key} = ${JSON.stringify(byId(id).value)}`).join('\n'));
+  if (action === 'settings') return printTerminal([...Object.entries(writingFields).map(([key, id]) => `${key} = ${JSON.stringify(byId(id).value)}`), `senses = ${readDescriptionSenses().join(',')}`].join('\n'));
   if (action === 'set') {
     const [key, ...values] = args;
+    if (key === 'senses') {
+      await setDescriptionSenses(terminalText(values, 'xenon set senses sight,sound,metaphor'));
+      return printTerminal(`Describe senses saved: ${readDescriptionSenses().join(', ')}.`);
+    }
     if (!Object.hasOwn(writingFields, key)) throw new Error('Unknown writing setting. Use xenon settings.');
     const field = byId(writingFields[key]);
     setTerminalField(field, terminalText(values, 'xenon set <key> <value>'));
@@ -387,7 +392,9 @@ async function xenonCommand({ args: [action = 'help', ...args], flags }) {
     const record = args[0]?.startsWith('/') ? terminalRecord(args.shift()) : currentRecord;
     if (flags.includes('--selection') && (record?.id !== currentRecord?.id || mainEditor.selectionStart === mainEditor.selectionEnd)) throw new Error('Use select <start> <end> or select all first.');
     const operation = action === 'run' ? undefined : action;
-    await runWriting(captureOperation(operation, args.length ? args.join(' ') : undefined, record), streamToTerminal());
+    const senseFlag = flags.find(flag => flag.startsWith('--senses='));
+    const options = senseFlag ? { describeSenses: Xenon.normalizeDescriptionSenses(senseFlag.slice('--senses='.length)) } : {};
+    await runWriting(captureOperation(operation, args.length ? args.join(' ') : undefined, record, options), streamToTerminal());
     return terminalPreviewResult();
   }
   if (action === 'preview') return terminalPreview(args);
