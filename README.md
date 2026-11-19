@@ -50,7 +50,7 @@ The seven writing tools, extraction, continuity analysis, multiple candidates an
 
 ### Describe
 
-Highlight a word, phrase or passage in the manuscript and choose **Describe selection** in the editor toolbar. You can also choose **describe** under Writing tools, or supply a subject through **Explicit input**. Enable the categories you want in **Describe senses**. Choices include sight, sound, smell, touch, taste and metaphor, and at least one must remain enabled. Your choices are saved with the workspace and travel in project exports.
+Highlight a word, phrase or passage in the manuscript to reveal **Describe** beside the selected text. Click it to describe that selection, including in focus mode. Keyboard users can press Tab from the selected text to reach the action, and Escape dismisses it. You can also choose **Describe selection** in the editor toolbar, choose **describe** under Writing tools, or supply a subject through **Explicit input**. Enable the categories you want in **Describe senses**. Choices include sight, sound, smell, touch, taste and metaphor, and at least one must remain enabled. Your choices are saved with the workspace and travel in project exports.
 
 Results appear as separate sensory suggestions in the preview. Each suggestion has **Copy**, **Insert after selection**, **Replace selection** and **Regenerate this sense** actions. You can insert several suggestions in succession. Describe preserves the source text until you choose an action, saves prior revisions, and blocks insertion if you edit the manuscript after generation. With explicit input and no highlighted passage, suggestions are applied at the captured caret position.
 

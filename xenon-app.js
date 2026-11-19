@@ -683,6 +683,110 @@ function setupTerminalAccess() {
   });
 }
 
+function describeSelectedText(options = {}) {
+  byId('writing-operation').value = 'describe';
+  loadOperationModel();
+  return runWriting(captureOperation('describe', undefined, currentRecord, options));
+}
+
+function setupSelectionDescribe() {
+  const action = byId('selection-describe');
+  const pane = byId('workspace-editor');
+  let frame, selecting = false, dismissed = '';
+
+  function update() {
+    frame = null;
+    const start = mainEditor.selectionStart, end = mainEditor.selectionEnd;
+    const key = `${currentRecord?.id}:${start}:${end}:${editorEpoch}`;
+    if (dismissed && dismissed !== key) dismissed = '';
+    if (selecting || isCherenkovMode() || mainEditor.readOnly || currentRecord?.type !== 'scene'
+      || activeOperation || legacyQueueController || dismissed === key
+      || ![mainEditor, action].includes(document.activeElement) || !mainEditor.value.slice(start, end).trim()) {
+      action.hidden = true;
+      return;
+    }
+
+    // Textareas do not expose range geometry. Mirror their text layout without rendering manuscript HTML.
+    const bounds = mainEditor.getBoundingClientRect(), paneBounds = pane.getBoundingClientRect();
+    const viewport = window.visualViewport;
+    const viewportTop = viewport?.offsetTop || 0, viewportLeft = viewport?.offsetLeft || 0;
+    const viewportBottom = viewportTop + (viewport?.height || innerHeight);
+    const viewportRight = viewportLeft + (viewport?.width || innerWidth);
+    const visibleTop = Math.max(viewportTop, bounds.top, paneBounds.top);
+    const visibleBottom = Math.min(viewportBottom, bounds.bottom, paneBounds.bottom);
+    const visibleLeft = Math.max(viewportLeft, bounds.left, paneBounds.left);
+    const visibleRight = Math.min(viewportRight, bounds.right, paneBounds.right);
+    if (visibleBottom <= visibleTop || visibleRight <= visibleLeft) { action.hidden = true; return; }
+    const mirror = document.createElement('div');
+    const style = getComputedStyle(mainEditor);
+    for (const property of ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'fontVariant', 'lineHeight',
+      'letterSpacing', 'wordSpacing', 'textAlign', 'textIndent', 'textTransform', 'direction', 'tabSize',
+      'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'wordBreak']) mirror.style[property] = style[property];
+    Object.assign(mirror.style, { position: 'fixed', visibility: 'hidden', pointerEvents: 'none',
+      boxSizing: 'border-box', whiteSpace: 'pre-wrap', overflowWrap: 'break-word',
+      width: `${mainEditor.clientWidth}px`, left: `${bounds.left + mainEditor.clientLeft}px`,
+      top: `${bounds.top + mainEditor.clientTop}px` });
+    mirror.setAttribute('aria-hidden', 'true');
+    mirror.textContent = mainEditor.value.slice(0, start);
+    const selected = textNode('span', mainEditor.value.slice(start, end));
+    mirror.append(selected);
+    document.body.append(mirror);
+    let rectangles;
+    try {
+      rectangles = [...selected.getClientRects()].map(rect => ({
+        left: rect.left - mainEditor.scrollLeft, right: rect.right - mainEditor.scrollLeft,
+        top: rect.top - mainEditor.scrollTop, bottom: rect.bottom - mainEditor.scrollTop
+      })).filter(rect => rect.bottom > visibleTop && rect.top < visibleBottom && rect.right > visibleLeft && rect.left < visibleRight);
+    } finally { mirror.remove(); }
+    const anchor = mainEditor.selectionDirection === 'backward' ? rectangles[0] : rectangles.at(-1);
+    if (!anchor) { action.hidden = true; return; }
+    action.hidden = false;
+    const size = action.getBoundingClientRect();
+    const left = Math.max(viewportLeft + 8, Math.min(anchor.right - size.width / 2, viewportRight - size.width - 8));
+    const below = anchor.bottom + 6;
+    const top = below + size.height <= visibleBottom ? below : Math.max(viewportTop + 8, anchor.top - size.height - 6);
+    action.style.left = `${left}px`;
+    action.style.top = `${Math.min(top, viewportBottom - size.height - 8)}px`;
+  }
+  function schedule() {
+    if (frame == null) frame = requestAnimationFrame(update);
+  }
+  mainEditor.addEventListener('pointerdown', () => { selecting = true; dismissed = ''; action.hidden = true; });
+  document.addEventListener('pointerdown', event => {
+    if (event.target === mainEditor || action.contains(event.target)) return;
+    dismissed = `${currentRecord?.id}:${mainEditor.selectionStart}:${mainEditor.selectionEnd}:${editorEpoch}`;
+    action.hidden = true;
+  });
+  document.addEventListener('pointerup', () => { selecting = false; schedule(); });
+  document.addEventListener('pointercancel', () => { selecting = false; schedule(); });
+  for (const event of ['select', 'selectionchange', 'input', 'keyup']) mainEditor.addEventListener(event, schedule);
+  document.addEventListener('selectionchange', schedule);
+  document.addEventListener('focusin', schedule);
+  document.addEventListener('scroll', schedule, true);
+  window.addEventListener('resize', schedule);
+  window.visualViewport?.addEventListener('resize', schedule);
+  window.visualViewport?.addEventListener('scroll', schedule);
+  window.addEventListener('blur', () => { action.hidden = true; });
+  if (window.ResizeObserver) new ResizeObserver(schedule).observe(mainEditor);
+  action.addEventListener('pointerdown', event => event.preventDefault());
+  action.addEventListener('click', guarded(() => {
+    const start = mainEditor.selectionStart, end = mainEditor.selectionEnd;
+    const input = mainEditor.value.slice(start, end);
+    if (!input.trim()) return;
+    dismissed = `${currentRecord?.id}:${start}:${end}:${editorEpoch}`;
+    action.hidden = true;
+    return describeSelectedText({ input, range: { start, end } });
+  }));
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape' || event.isComposing || action.hidden || ![mainEditor, action].includes(document.activeElement)) return;
+    event.preventDefault();
+    const returnToEditor = document.activeElement === action;
+    dismissed = `${currentRecord?.id}:${mainEditor.selectionStart}:${mainEditor.selectionEnd}:${editorEpoch}`;
+    action.hidden = true;
+    if (returnToEditor) mainEditor.focus({ preventScroll: true });
+  });
+}
+
 async function setupXenon() {
   applyWorkspaceMode(XenonStorage.settings.getItem('xenon-workspace-mode'));
   bind('workspace-mode', event => setWorkspaceMode(event.target.value), 'change');
@@ -695,11 +799,7 @@ async function setupXenon() {
       throw error;
     }
   }, 'change');
-  bind('describe-selection', () => {
-    byId('writing-operation').value = 'describe';
-    loadOperationModel();
-    return runWriting(captureOperation('describe'));
-  });
+  bind('describe-selection', () => describeSelectedText());
   bind('custom-css-form', event => {
     event.preventDefault();
     saveCustomCss(byId('custom-css').value);
@@ -724,6 +824,7 @@ async function setupXenon() {
   window.addEventListener('beforeunload', event => { if (editorDirty || workspaceStorage.failed || activeOperation || legacyQueueController || preview?.candidates.some(c => c.content) || document.querySelector('.terminal-prompt textarea')?.value || workspaceStorage.mode === 'memory' && (recordArray.length || mainEditor.value)) { event.preventDefault(); event.returnValue = ''; } });
   window.addEventListener('unhandledrejection', event => { event.preventDefault(); reportStorageError(event.reason || new Error('Operation failed.')); });
   setupTerminalAccess();
+  setupSelectionDescribe();
   document.addEventListener('keydown', guarded(async event => {
     if (event.defaultPrevented) return;
     if (event.ctrlKey && event.key.toLowerCase() === 'c' && !terminalContent.hidden

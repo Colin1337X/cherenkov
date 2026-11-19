@@ -270,6 +270,17 @@ h2 {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent), 0 0 30px color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
+.selection-action {
+  position: fixed;
+  z-index: 20;
+  min-height: 38px;
+  padding: 8px 14px;
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--surface-strong);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .5);
+}
+
 .resizable-text-area::placeholder,
 input::placeholder,
 textarea::placeholder {
